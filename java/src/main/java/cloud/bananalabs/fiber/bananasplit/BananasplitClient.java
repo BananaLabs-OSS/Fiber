@@ -5,6 +5,7 @@ import com.google.gson.Gson;
 import okhttp3.*;
 
 import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 
 public class BananasplitClient {
 
@@ -14,66 +15,100 @@ public class BananasplitClient {
     private final Gson gson;
     private final String baseUrl;
 
-    public BananasplitClient(String baseUrl) {
+    public BananasplitClient(String baseUrl, OkHttpClient http, Gson gson) {
         this.baseUrl = baseUrl;
-        this.http = new OkHttpClient();
-        this.gson = new Gson();
+        this.http = http;
+        this.gson = gson;
     }
 
-    public QueueResponse joinQueue(String uuid, String mode, String lobbyServer) throws IOException {
+    public CompletableFuture<QueueResponse> joinQueue(String uuid, String mode, String lobbyServer) {
+        CompletableFuture<QueueResponse> future = new CompletableFuture<>();
+
         QueueJoinRequest body = new QueueJoinRequest(uuid, mode, lobbyServer);
         Request request = new Request.Builder()
                 .url(baseUrl + "/queue/join")
                 .post(RequestBody.create(gson.toJson(body), JSON))
                 .build();
 
-        try (Response response = http.newCall(request).execute()) {
-            return gson.fromJson(response.body().string(), QueueResponse.class);
-        }
+        http.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onResponse(Call call, Response response) {
+                try (response) {
+                    if (response.isSuccessful() && response.body() != null) {
+                        QueueResponse result = gson.fromJson(response.body().charStream(), QueueResponse.class);
+                        future.complete(result);
+                    } else {
+                        future.completeExceptionally(new IOException("Join queue failed: " + response.code()));
+                    }
+                } catch (Exception e) {
+                    future.completeExceptionally(e);
+                }
+            }
+
+            @Override
+            public void onFailure(Call call, IOException e) {
+                future.completeExceptionally(e);
+            }
+        });
+
+        return future;
     }
 
-    public void leaveQueue(String uuid, String mode) throws IOException {
+    public CompletableFuture<Void> leaveQueue(String uuid, String mode) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+
         QueueLeaveRequest body = new QueueLeaveRequest(uuid, mode);
         Request request = new Request.Builder()
                 .url(baseUrl + "/queue/leave")
                 .post(RequestBody.create(gson.toJson(body), JSON))
                 .build();
 
-        try (Response response = http.newCall(request).execute()) {
-            // Just checking it succeeded
-        }
+        http.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onResponse(Call call, Response response) {
+                try (response) {
+                    future.complete(null);
+                }
+            }
+
+            @Override
+            public void onFailure(Call call, IOException e) {
+                future.completeExceptionally(e);
+            }
+        });
+
+        return future;
     }
 
-    public QueueSizeResponse getQueueSize(String mode) throws IOException {
+    public CompletableFuture<QueueSizeResponse> getQueueSize(String mode) {
+        CompletableFuture<QueueSizeResponse> future = new CompletableFuture<>();
+
         Request request = new Request.Builder()
                 .url(baseUrl + "/queue/" + mode + "/size")
                 .get()
                 .build();
 
-        try (Response response = http.newCall(request).execute()) {
-            return gson.fromJson(response.body().string(), QueueSizeResponse.class);
-        }
-    }
+        http.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onResponse(Call call, Response response) {
+                try (response) {
+                    if (response.isSuccessful() && response.body() != null) {
+                        QueueSizeResponse result = gson.fromJson(response.body().charStream(), QueueSizeResponse.class);
+                        future.complete(result);
+                    } else {
+                        future.completeExceptionally(new IOException("Queue size failed: " + response.code()));
+                    }
+                } catch (Exception e) {
+                    future.completeExceptionally(e);
+                }
+            }
 
-    public QueueStatusResponse getQueueStatus(String mode, String uuid) throws IOException {
-        Request request = new Request.Builder()
-                .url(baseUrl + "/queue/" + mode + "/status/" + uuid)
-                .get()
-                .build();
+            @Override
+            public void onFailure(Call call, IOException e) {
+                future.completeExceptionally(e);
+            }
+        });
 
-        try (Response response = http.newCall(request).execute()) {
-            return gson.fromJson(response.body().string(), QueueStatusResponse.class);
-        }
-    }
-
-    public void matchComplete(MatchCompleteRequest body) throws IOException {
-        Request request = new Request.Builder()
-                .url(baseUrl + "/match-complete")
-                .post(RequestBody.create(gson.toJson(body), JSON))
-                .build();
-
-        try (Response response = http.newCall(request).execute()) {
-            // Just checking it succeeded
-        }
+        return future;
     }
 }

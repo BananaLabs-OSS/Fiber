@@ -8,6 +8,7 @@ import okhttp3.*;
 import java.io.IOException;
 import java.lang.reflect.Type;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 public class BananagineClient {
 
@@ -17,119 +18,181 @@ public class BananagineClient {
     private final Gson gson;
     private final String baseUrl;
 
-    public BananagineClient(String baseUrl) {
+    public BananagineClient(String baseUrl, OkHttpClient http, Gson gson) {
         this.baseUrl = baseUrl;
-        this.http = new OkHttpClient();
-        this.gson = new Gson();
+        this.http = http;
+        this.gson = gson;
     }
 
-    // Server Registry
-    public void registerServer(ServerRegistration server) throws IOException {
+    public CompletableFuture<Void> updatePlayerCount(String serverId, int players) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+
+        String json = "{\"players\":" + players + "}";
+        Request request = new Request.Builder()
+                .url(baseUrl + "/registry/servers/" + serverId + "/players")
+                .put(RequestBody.create(json, JSON))
+                .build();
+
+        http.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onResponse(Call call, Response response) {
+                try (response) {
+                    future.complete(null);
+                }
+            }
+
+            @Override
+            public void onFailure(Call call, IOException e) {
+                future.completeExceptionally(e);
+            }
+        });
+
+        return future;
+    }
+
+    public CompletableFuture<Void> registerServer(ServerRegistration server) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+
         Request request = new Request.Builder()
                 .url(baseUrl + "/registry/servers/")
                 .post(RequestBody.create(gson.toJson(server), JSON))
                 .build();
 
-        try (Response response = http.newCall(request).execute()) {
-            if (!response.isSuccessful()) throw new IOException("Register failed: " + response.code());
-        }
+        http.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onResponse(Call call, Response response) {
+                try (response) {
+                    if (response.isSuccessful()) {
+                        future.complete(null);
+                    } else {
+                        future.completeExceptionally(new IOException("Register failed: " + response.code()));
+                    }
+                }
+            }
+
+            @Override
+            public void onFailure(Call call, IOException e) {
+                future.completeExceptionally(e);
+            }
+        });
+
+        return future;
     }
 
-    public List<ServerInfo> listServers() throws IOException {
+    public CompletableFuture<List<ServerInfo>> listServers() {
+        CompletableFuture<List<ServerInfo>> future = new CompletableFuture<>();
+
         Request request = new Request.Builder()
                 .url(baseUrl + "/registry/servers/")
                 .get()
                 .build();
 
-        try (Response response = http.newCall(request).execute()) {
-            if (!response.isSuccessful()) throw new IOException("List failed: " + response.code());
-            String json = response.body().string();
-            Type listType = new TypeToken<List<ServerInfo>>(){}.getType();
-            List<ServerInfo> servers = gson.fromJson(json, listType);
-            return servers != null ? servers : List.of();
-        }
+        http.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onResponse(Call call, Response response) {
+                try (response) {
+                    if (response.isSuccessful() && response.body() != null) {
+                        Type listType = new TypeToken<List<ServerInfo>>(){}.getType();
+                        List<ServerInfo> servers = gson.fromJson(response.body().charStream(), listType);
+                        future.complete(servers != null ? servers : List.of());
+                    } else {
+                        future.completeExceptionally(new IOException("List failed: " + response.code()));
+                    }
+                } catch (Exception e) {
+                    future.completeExceptionally(e);
+                }
+            }
+
+            @Override
+            public void onFailure(Call call, IOException e) {
+                future.completeExceptionally(e);
+            }
+        });
+
+        return future;
     }
 
-    public String getServer(String serverId) throws IOException {
-        Request request = new Request.Builder()
-                .url(baseUrl + "/registry/servers/" + serverId)
-                .get()
-                .build();
+    public CompletableFuture<Void> unregisterServer(String serverId) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
 
-        try (Response response = http.newCall(request).execute()) {
-            return response.body().string();
-        }
-    }
-
-    public void updateServer(String serverId, String jsonBody) throws IOException {
-        Request request = new Request.Builder()
-                .url(baseUrl + "/registry/servers/" + serverId)
-                .put(RequestBody.create(jsonBody, JSON))
-                .build();
-
-        try (Response response = http.newCall(request).execute()) {
-            if (!response.isSuccessful()) throw new IOException("Update failed: " + response.code());
-        }
-    }
-
-    public void unregisterServer(String serverId) throws IOException {
         Request request = new Request.Builder()
                 .url(baseUrl + "/registry/servers/" + serverId)
                 .delete()
                 .build();
 
-        try (Response response = http.newCall(request).execute()) {
-            // OK if 200 or 404
-        }
+        http.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onResponse(Call call, Response response) {
+                try (response) {
+                    future.complete(null);
+                }
+            }
+
+            @Override
+            public void onFailure(Call call, IOException e) {
+                future.completeExceptionally(e);
+            }
+        });
+
+        return future;
     }
 
-    // Match Registry
-    public void updateMatch(String serverId, String matchId, MatchUpdate match) throws IOException {
-        Request request = new Request.Builder()
-                .url(baseUrl + "/registry/servers/" + serverId + "/matches/" + matchId)
-                .put(RequestBody.create(gson.toJson(match), JSON))
-                .build();
+    public CompletableFuture<Void> spawnServer(String template) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
 
-        try (Response response = http.newCall(request).execute()) {
-            if (!response.isSuccessful()) throw new IOException("Match update failed: " + response.code());
-        }
-    }
-
-    public void removeMatch(String serverId, String matchId) throws IOException {
-        Request request = new Request.Builder()
-                .url(baseUrl + "/registry/servers/" + serverId + "/matches/" + matchId)
-                .delete()
-                .build();
-
-        try (Response response = http.newCall(request).execute()) {
-            // OK
-        }
-    }
-
-    // Orchestration
-    public ServerInfo spawnServer(String template) throws IOException {
         String json = "{\"template\":\"" + template + "\"}";
-        RequestBody body = RequestBody.create(json, JSON);
-
         Request request = new Request.Builder()
                 .url(baseUrl + "/orchestration/servers/")
-                .post(body)
+                .post(RequestBody.create(json, JSON))
                 .build();
 
-        try (Response response = http.newCall(request).execute()) {
-            if (!response.isSuccessful()) throw new IOException("Spawn failed: " + response.code());
-            return gson.fromJson(response.body().string(), ServerInfo.class);
-        }
+        http.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onResponse(Call call, Response response) {
+                try (response) {
+                    if (response.isSuccessful()) {
+                        future.complete(null);
+                    } else {
+                        future.completeExceptionally(new IOException("Spawn failed: " + response.code()));
+                    }
+                }
+            }
+
+            @Override
+            public void onFailure(Call call, IOException e) {
+                future.completeExceptionally(e);
+            }
+        });
+
+        return future;
     }
 
-    public void shutdownServer(String serverId) throws IOException {
+    public CompletableFuture<Void> shutdownServer(String serverId) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+
         Request request = new Request.Builder()
                 .url(baseUrl + "/orchestration/servers/" + serverId)
                 .delete()
                 .build();
 
-        try (Response response = http.newCall(request).execute()) {
-            if (!response.isSuccessful()) throw new IOException("Shutdown failed: " + response.code());
-        }
+        http.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onResponse(Call call, Response response) {
+                try (response) {
+                    if (response.isSuccessful()) {
+                        future.complete(null);
+                    } else {
+                        future.completeExceptionally(new IOException("Shutdown failed: " + response.code()));
+                    }
+                }
+            }
+
+            @Override
+            public void onFailure(Call call, IOException e) {
+                future.completeExceptionally(e);
+            }
+        });
+
+        return future;
     }
 }
