@@ -3,6 +3,7 @@ package cloud.bananalabs.fiber.bananasplit;
 import cloud.bananalabs.fiber.models.*;
 import com.google.gson.Gson;
 import okhttp3.*;
+import java.util.List;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
@@ -100,6 +101,32 @@ public class BananasplitClient {
                     }
                 } catch (Exception e) {
                     future.completeExceptionally(e);
+                }
+            }
+
+            @Override
+            public void onFailure(Call call, IOException e) {
+                future.completeExceptionally(e);
+            }
+        });
+
+        return future;
+    }
+
+    public CompletableFuture<Void> matchComplete(String serverId, String matchId, List<PlayerAction> players) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+
+        MatchCompleteRequest body = new MatchCompleteRequest(serverId, matchId, players);
+        Request request = new Request.Builder()
+                .url(baseUrl + "/match-complete")
+                .post(RequestBody.create(gson.toJson(body), JSON))
+                .build();
+
+        http.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onResponse(Call call, Response response) {
+                try (response) {
+                    future.complete(null);
                 }
             }
 

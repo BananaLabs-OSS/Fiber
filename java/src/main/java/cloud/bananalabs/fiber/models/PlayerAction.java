@@ -10,6 +10,6 @@ public class PlayerAction {
         this.action = action;
     }
 
-    public String getUid() { return uuid; }
+    public String getUuid() { return uuid; }
     public String getAction() { return action; }
 }

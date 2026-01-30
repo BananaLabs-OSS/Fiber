@@ -10,6 +10,6 @@ public class QueueLeaveRequest {
         this.mode = mode;
     }
 
-    public String getUid() { return uuid; }
+    public String getUuid() { return uuid; }
     public String getMode() { return mode; }
 }

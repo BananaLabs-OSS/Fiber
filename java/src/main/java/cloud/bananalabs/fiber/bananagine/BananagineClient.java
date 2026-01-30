@@ -29,7 +29,7 @@ public class BananagineClient {
 
         String json = "{\"players\":" + players + "}";
         Request request = new Request.Builder()
-                .url(baseUrl + "/registry/servers/" + serverId + "/players")
+                .url(baseUrl + "/registry/servers" + serverId + "/players")
                 .put(RequestBody.create(json, JSON))
                 .build();
 
@@ -54,7 +54,7 @@ public class BananagineClient {
         CompletableFuture<Void> future = new CompletableFuture<>();
 
         Request request = new Request.Builder()
-                .url(baseUrl + "/registry/servers/")
+                .url(baseUrl + "/registry/servers")
                 .post(RequestBody.create(gson.toJson(server), JSON))
                 .build();
 
@@ -83,7 +83,7 @@ public class BananagineClient {
         CompletableFuture<List<ServerInfo>> future = new CompletableFuture<>();
 
         Request request = new Request.Builder()
-                .url(baseUrl + "/registry/servers/")
+                .url(baseUrl + "/registry/servers")
                 .get()
                 .build();
 
@@ -116,7 +116,7 @@ public class BananagineClient {
         CompletableFuture<Void> future = new CompletableFuture<>();
 
         Request request = new Request.Builder()
-                .url(baseUrl + "/registry/servers/" + serverId)
+                .url(baseUrl + "/registry/servers" + serverId)
                 .delete()
                 .build();
 
@@ -142,7 +142,7 @@ public class BananagineClient {
 
         String json = "{\"template\":\"" + template + "\"}";
         Request request = new Request.Builder()
-                .url(baseUrl + "/orchestration/servers/")
+                .url(baseUrl + "/orchestration/servers")
                 .post(RequestBody.create(json, JSON))
                 .build();
 
@@ -171,7 +171,7 @@ public class BananagineClient {
         CompletableFuture<Void> future = new CompletableFuture<>();
 
         Request request = new Request.Builder()
-                .url(baseUrl + "/orchestration/servers/" + serverId)
+                .url(baseUrl + "/orchestration/servers" + serverId)
                 .delete()
                 .build();
 
