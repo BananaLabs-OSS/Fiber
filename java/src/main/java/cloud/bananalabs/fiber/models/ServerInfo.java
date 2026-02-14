@@ -3,25 +3,25 @@ package cloud.bananalabs.fiber.models;
 import com.google.gson.annotations.SerializedName;
 
 public class ServerInfo {
-    @SerializedName("ID")
+    @SerializedName("id")
     private String id;
 
-    @SerializedName("Type")
+    @SerializedName("type")
     private String type;
 
-    @SerializedName("Mode")
+    @SerializedName("mode")
     private String mode;
 
-    @SerializedName("Host")
+    @SerializedName("host")
     private String host;
 
-    @SerializedName("Port")
+    @SerializedName("port")
     private int port;
 
-    @SerializedName("Players")
+    @SerializedName("players")
     private int players;
 
-    @SerializedName("MaxPlayers")
+    @SerializedName("maxPlayers")
     private int maxPlayers;
 
     public String getId() { return id; }

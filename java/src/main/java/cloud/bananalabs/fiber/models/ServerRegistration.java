@@ -5,22 +5,22 @@ import com.google.gson.annotations.SerializedName;
 public class ServerRegistration {
 
 
-    @SerializedName("ID")
+    @SerializedName("id")
     private String id;
 
-    @SerializedName("Type")
+    @SerializedName("type")
     private String type;
 
-    @SerializedName("Host")
+    @SerializedName("host")
     private String host;
 
-    @SerializedName("Port")
+    @SerializedName("port")
     private int port;
 
-    @SerializedName("WebhookPort")
+    @SerializedName("webhookPort")
     private int webhookPort;
 
-    @SerializedName("Mode")
+    @SerializedName("mode")
     private String mode;
 
     public ServerRegistration(String id, String type, String host, int port, String mode) {
