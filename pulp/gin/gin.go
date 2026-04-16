@@ -37,17 +37,28 @@ type HandlerFunc func(c *Context)
 // after a simple import rewrite.
 type H map[string]any
 
-// Engine is the router. It owns the map of registered routes and
-// translates each step event that arrives via pulp.OnStep into a
-// handler call.
+// Engine is the router. It owns the full route table and the root
+// middleware stack; Group creates a RouterGroup that inherits the
+// current middleware and adds a path prefix.
 type Engine struct {
-	routes []route
+	routes     []route
+	middleware []HandlerFunc
+}
+
+// RouterGroup is a scope attached to a shared prefix + middleware
+// stack. Obtained via Engine.Group. Further Group calls on a group
+// nest deeper. Mirrors gin.RouterGroup for the methods services
+// typically call.
+type RouterGroup struct {
+	engine     *Engine
+	prefix     string
+	middleware []HandlerFunc
 }
 
 type route struct {
-	method  string
-	pattern string
-	handler HandlerFunc
+	method     string
+	pattern    string
+	handlers   []HandlerFunc
 }
 
 // New returns a fresh Engine. Multiple engines are not supported — the
@@ -56,15 +67,52 @@ func New() *Engine {
 	return &Engine{}
 }
 
-// Default is an alias for New for drop-in compatibility with Gin code.
-// Gin's middleware stack has no equivalent yet — this simply returns
-// New().
+// Default is an alias for New, preserved for drop-in Gin compatibility.
 func Default() *Engine {
 	return New()
 }
 
-// GET registers a GET route. Pattern segments prefixed with ":" are
-// captured as path params.
+// Use appends middleware to the engine's global stack. Every route
+// registered after Use is called runs through these middleware in
+// order before the handler.
+func (e *Engine) Use(middleware ...HandlerFunc) *Engine {
+	e.middleware = append(e.middleware, middleware...)
+	return e
+}
+
+// Group returns a RouterGroup that prepends prefix to every route
+// registered through it and inherits the engine's current middleware
+// stack. Gin pattern: r.Group("/api").Use(auth).GET("/users", h).
+func (e *Engine) Group(prefix string, middleware ...HandlerFunc) *RouterGroup {
+	inherited := append([]HandlerFunc{}, e.middleware...)
+	inherited = append(inherited, middleware...)
+	return &RouterGroup{
+		engine:     e,
+		prefix:     prefix,
+		middleware: inherited,
+	}
+}
+
+// Use adds middleware to this group. Runs after anything inherited
+// from the parent engine/group.
+func (g *RouterGroup) Use(middleware ...HandlerFunc) *RouterGroup {
+	g.middleware = append(g.middleware, middleware...)
+	return g
+}
+
+// Group creates a nested RouterGroup.
+func (g *RouterGroup) Group(prefix string, middleware ...HandlerFunc) *RouterGroup {
+	inherited := append([]HandlerFunc{}, g.middleware...)
+	inherited = append(inherited, middleware...)
+	return &RouterGroup{
+		engine:     g.engine,
+		prefix:     g.prefix + prefix,
+		middleware: inherited,
+	}
+}
+
+// GET registers a GET route on the engine. Pattern segments prefixed
+// with ":" are captured as path params.
 func (e *Engine) GET(pattern string, handler HandlerFunc) *Engine {
 	return e.Handle("GET", pattern, handler)
 }
@@ -89,14 +137,56 @@ func (e *Engine) PATCH(pattern string, handler HandlerFunc) *Engine {
 	return e.Handle("PATCH", pattern, handler)
 }
 
-// Handle registers a route for an arbitrary method.
+// Handle registers a route for an arbitrary method at the engine's
+// root. Middleware already installed via Use runs before the handler.
 func (e *Engine) Handle(method, pattern string, handler HandlerFunc) *Engine {
+	chain := append([]HandlerFunc{}, e.middleware...)
+	chain = append(chain, handler)
 	e.routes = append(e.routes, route{
-		method:  strings.ToUpper(method),
-		pattern: pattern,
-		handler: handler,
+		method:   strings.ToUpper(method),
+		pattern:  pattern,
+		handlers: chain,
 	})
 	return e
+}
+
+// GET registers a GET route on this group. The full pattern becomes
+// group.prefix + pattern.
+func (g *RouterGroup) GET(pattern string, handler HandlerFunc) *RouterGroup {
+	return g.Handle("GET", pattern, handler)
+}
+
+// POST registers a POST route on this group.
+func (g *RouterGroup) POST(pattern string, handler HandlerFunc) *RouterGroup {
+	return g.Handle("POST", pattern, handler)
+}
+
+// PUT registers a PUT route on this group.
+func (g *RouterGroup) PUT(pattern string, handler HandlerFunc) *RouterGroup {
+	return g.Handle("PUT", pattern, handler)
+}
+
+// DELETE registers a DELETE route on this group.
+func (g *RouterGroup) DELETE(pattern string, handler HandlerFunc) *RouterGroup {
+	return g.Handle("DELETE", pattern, handler)
+}
+
+// PATCH registers a PATCH route on this group.
+func (g *RouterGroup) PATCH(pattern string, handler HandlerFunc) *RouterGroup {
+	return g.Handle("PATCH", pattern, handler)
+}
+
+// Handle registers a route for an arbitrary method on this group.
+// Chain order is: engine middleware → group middleware → handler.
+func (g *RouterGroup) Handle(method, pattern string, handler HandlerFunc) *RouterGroup {
+	chain := append([]HandlerFunc{}, g.middleware...)
+	chain = append(chain, handler)
+	g.engine.routes = append(g.engine.routes, route{
+		method:   strings.ToUpper(method),
+		pattern:  g.prefix + pattern,
+		handlers: chain,
+	})
+	return g
 }
 
 // Run registers every declared route with the host, installs a
@@ -161,9 +251,9 @@ func (e *Engine) dispatch(ev pulp.StepEvent) error {
 		if !matchPattern(r.pattern, req.Path) {
 			continue
 		}
-		c := &Context{req: req}
+		c := &Context{req: req, handlers: r.handlers}
 		c.populateParams(r.pattern, req.Path)
-		r.handler(c)
+		c.Next()
 		if !c.responded {
 			// Handler never called a response method — send empty 200
 			// so the client is not left hanging. Matches Gin's default

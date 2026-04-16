@@ -18,6 +18,77 @@ type Context struct {
 	headers   map[string]string
 	body      []byte
 	responded bool
+
+	// handlers is the ordered middleware+handler chain for this route.
+	// Next() walks it; handlers read index to know where they are.
+	handlers []HandlerFunc
+	index    int
+	aborted  bool
+
+	// keys is Gin's per-request scratch space, populated by middleware
+	// (e.g. JWTAuth writes "account_id" here) and read by handlers.
+	keys map[string]any
+}
+
+// Next advances through the middleware/handler chain. Middleware call
+// Next() to run the rest of the chain, then perform post-processing
+// when it returns. Call sites that never invoke Next for a request
+// abort the chain — use Abort or one of the AbortWith* methods.
+func (c *Context) Next() {
+	c.index++
+	for c.index <= len(c.handlers) && !c.aborted {
+		c.handlers[c.index-1](c)
+		c.index++
+	}
+}
+
+// Abort stops further handler execution. Call from a middleware that
+// has already written a response (e.g. JWTAuth rejecting a bad token).
+func (c *Context) Abort() {
+	c.aborted = true
+}
+
+// IsAborted reports whether the request chain has been aborted.
+func (c *Context) IsAborted() bool { return c.aborted }
+
+// Set stores value under key in the per-request scratch space. Used
+// by middleware to pass data (account IDs, parsed tokens) to handlers.
+func (c *Context) Set(key string, value any) {
+	if c.keys == nil {
+		c.keys = map[string]any{}
+	}
+	c.keys[key] = value
+}
+
+// Get retrieves a value set by middleware. Returns (value, true) on
+// hit, (nil, false) on miss — same semantics as gin.Context.Get.
+func (c *Context) Get(key string) (any, bool) {
+	if c.keys == nil {
+		return nil, false
+	}
+	v, ok := c.keys[key]
+	return v, ok
+}
+
+// GetString is the typed convenience wrapper. Returns zero value when
+// the key is missing or wrong type.
+func (c *Context) GetString(key string) string {
+	v, ok := c.Get(key)
+	if !ok {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
+}
+
+// MustGet is like Get but panics when the key is missing. Rarely used
+// in practice; included for Gin parity.
+func (c *Context) MustGet(key string) any {
+	v, ok := c.Get(key)
+	if !ok {
+		panic("key not found: " + key)
+	}
+	return v
 }
 
 // Request returns the raw decoded HTTPRequest the host delivered. Use
@@ -127,16 +198,17 @@ func (c *Context) Data(status int, contentType string, data []byte) {
 }
 
 // AbortWithStatus sends an empty response with the given status and
-// stops further handler logic (in Gin this aborts middleware — here it
-// just ends the response since we do not yet run middleware chains).
+// aborts the handler chain.
 func (c *Context) AbortWithStatus(status int) {
+	c.aborted = true
 	c.status = uint32(status)
 	c.body = nil
 	c.flush()
 }
 
-// AbortWithStatusJSON sends status + a JSON body and stops.
+// AbortWithStatusJSON sends status + a JSON body and aborts the chain.
 func (c *Context) AbortWithStatusJSON(status int, obj any) {
+	c.aborted = true
 	c.JSON(status, obj)
 }
 
