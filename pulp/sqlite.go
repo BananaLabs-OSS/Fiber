@@ -50,10 +50,17 @@ func (sqliteAPI) Exec(query string, args ...any) error {
 	return nil
 }
 
-// Query runs a SELECT statement and returns rows as [][]any — outer
-// slice is rows, inner slice is column values in declaration order.
-// Callers usually know the column order from their own query.
-func (sqliteAPI) Query(query string, args ...any) ([][]any, error) {
+// QueryResult is what Query returns — column names plus rows, where
+// each row's values are in Columns order.
+type QueryResult struct {
+	Columns []string `msgpack:"columns"`
+	Rows    [][]any  `msgpack:"rows"`
+}
+
+// Query runs a SELECT statement and returns the column names plus
+// rows. Use this for ad-hoc queries; for ORM integration use the
+// pulp/sql driver which wraps Query in Go's database/sql surface.
+func (sqliteAPI) Query(query string, args ...any) (QueryResult, error) {
 	q := []byte(query)
 	var pPtr, pLen uint32
 	var paramBytes []byte
@@ -61,7 +68,7 @@ func (sqliteAPI) Query(query string, args ...any) ([][]any, error) {
 		var err error
 		paramBytes, err = msgpack.Marshal(args)
 		if err != nil {
-			return nil, fmt.Errorf("encode args: %w", err)
+			return QueryResult{}, fmt.Errorf("encode args: %w", err)
 		}
 		pPtr = uint32(uintptr(unsafe.Pointer(&paramBytes[0])))
 		pLen = uint32(len(paramBytes))
@@ -78,15 +85,15 @@ func (sqliteAPI) Query(query string, args ...any) ([][]any, error) {
 	runtime.KeepAlive(q)
 	runtime.KeepAlive(paramBytes)
 	if code != 0 {
-		return nil, fmt.Errorf("sqlite_query host code %d", code)
+		return QueryResult{}, fmt.Errorf("sqlite_query host code %d", code)
 	}
 	if rowsLen == 0 {
-		return nil, nil
+		return QueryResult{}, nil
 	}
 	rowBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(rowsPtr))), rowsLen)
-	var rows [][]any
-	if err := msgpack.Unmarshal(rowBytes, &rows); err != nil {
-		return nil, fmt.Errorf("decode rows: %w", err)
+	var result QueryResult
+	if err := msgpack.Unmarshal(rowBytes, &result); err != nil {
+		return QueryResult{}, fmt.Errorf("decode query result: %w", err)
 	}
-	return rows, nil
+	return result, nil
 }
