@@ -93,3 +93,18 @@ const (
 	WSOpCodeText   uint8 = 1
 	WSOpCodeBinary uint8 = 2
 )
+
+// WSSendRequest is what the plugin passes to ws_send: which connection,
+// what opcode, the payload bytes.
+type WSSendRequest struct {
+	ConnID  uint64 `msgpack:"conn_id"`
+	OpCode  uint8  `msgpack:"opcode"`
+	Payload []byte `msgpack:"payload"`
+}
+
+// WSCloseRequest is what the plugin passes to ws_close.
+type WSCloseRequest struct {
+	ConnID uint64 `msgpack:"conn_id"`
+	Code   uint16 `msgpack:"code"`
+	Reason string `msgpack:"reason"`
+}

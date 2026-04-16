@@ -23,6 +23,7 @@ package gin
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/BananaLabs-OSS/Fiber/pulp"
@@ -39,9 +40,11 @@ type H map[string]any
 
 // Engine is the router. It owns the full route table and the root
 // middleware stack; Group creates a RouterGroup that inherits the
-// current middleware and adds a path prefix.
+// current middleware and adds a path prefix. The engine also owns the
+// WebSocket route table; plugins use Engine.WS to register ws.* routes.
 type Engine struct {
 	routes     []route
+	wsRoutes   []wsRoute
 	middleware []HandlerFunc
 }
 
@@ -88,7 +91,7 @@ func (e *Engine) Group(prefix string, middleware ...HandlerFunc) *RouterGroup {
 	inherited = append(inherited, middleware...)
 	return &RouterGroup{
 		engine:     e,
-		prefix:     prefix,
+		prefix:     normalizePrefix(prefix),
 		middleware: inherited,
 	}
 }
@@ -100,13 +103,15 @@ func (g *RouterGroup) Use(middleware ...HandlerFunc) *RouterGroup {
 	return g
 }
 
-// Group creates a nested RouterGroup.
+// Group creates a nested RouterGroup. The resulting prefix is the
+// parent's prefix joined with the child's prefix, with slashes
+// normalized so ("/") + ("/x") becomes "/x" not "//x".
 func (g *RouterGroup) Group(prefix string, middleware ...HandlerFunc) *RouterGroup {
 	inherited := append([]HandlerFunc{}, g.middleware...)
 	inherited = append(inherited, middleware...)
 	return &RouterGroup{
 		engine:     g.engine,
-		prefix:     g.prefix + prefix,
+		prefix:     joinPath(g.prefix, prefix),
 		middleware: inherited,
 	}
 }
@@ -183,7 +188,7 @@ func (g *RouterGroup) Handle(method, pattern string, handler HandlerFunc) *Route
 	chain = append(chain, handler)
 	g.engine.routes = append(g.engine.routes, route{
 		method:   strings.ToUpper(method),
-		pattern:  g.prefix + pattern,
+		pattern:  joinPath(g.prefix, pattern),
 		handlers: chain,
 	})
 	return g
@@ -204,32 +209,65 @@ func (e *Engine) Run(addr ...string) error {
 	return nil
 }
 
-// RegisterRoutes declares every route with the host without installing
-// a pulp.OnStep handler. Use when you compose a custom step handler
-// that dispatches HTTP events via Dispatch.
+// RegisterRoutes declares every route — both HTTP and WebSocket —
+// with the host without installing a pulp.OnStep handler. Use when
+// you compose a custom step handler that dispatches events via
+// Dispatch.
+//
+// Routes are sorted by specificity before registration so static
+// patterns (no ":param" segments) win over parametric ones during
+// dispatch — for example /presence/count wins over /presence/:userId
+// even when the latter was declared first.
 func (e *Engine) RegisterRoutes() error {
+	sort.SliceStable(e.routes, func(i, j int) bool {
+		return paramCount(e.routes[i].pattern) < paramCount(e.routes[j].pattern)
+	})
 	for _, r := range e.routes {
 		if err := pulp.HTTP.Register(r.method, r.pattern); err != nil {
 			return fmt.Errorf("register %s %s: %w", r.method, r.pattern, err)
 		}
 	}
+	for _, r := range e.wsRoutes {
+		if err := pulp.WS.Register(r.path); err != nil {
+			return fmt.Errorf("register ws %s: %w", r.path, err)
+		}
+	}
 	return nil
 }
 
-// Dispatch routes a single step event to the matching HTTP handler.
-// Returns nil for non-HTTP events so it is safe to call unconditionally
-// from a composed OnStep. Plugins that need to run periodic work wrap
-// Dispatch in a closure:
+// paramCount returns the number of ":param" segments in pattern.
+// Used only to order routes by specificity during RegisterRoutes.
+func paramCount(pattern string) int {
+	n := 0
+	for _, seg := range strings.Split(pattern, "/") {
+		if strings.HasPrefix(seg, ":") {
+			n++
+		}
+	}
+	return n
+}
+
+// Dispatch routes a single step event to the matching handler — HTTP
+// or WebSocket. Returns nil for events the engine does not own, so
+// it is safe to call unconditionally from a composed OnStep. Plugins
+// that need to run periodic work wrap Dispatch in a closure:
 //
 //	r := pulpgin.New()
 //	r.GET(...)
+//	r.WS(...)
 //	_ = r.RegisterRoutes()
 //	pulp.OnStep(func(ev pulp.StepEvent) error {
 //		myPeriodicWork(ev.WallTime)
 //		return r.Dispatch(ev)
 //	})
 func (e *Engine) Dispatch(ev pulp.StepEvent) error {
-	return e.dispatch(ev)
+	switch ev.Kind {
+	case pulp.EventHTTPRequest:
+		return e.dispatch(ev)
+	case pulp.EventWSOpen, pulp.EventWSFrame, pulp.EventWSClose:
+		return e.dispatchWS(ev)
+	}
+	return nil
 }
 
 // dispatch is installed as the plugin's step handler. It receives every
@@ -296,3 +334,35 @@ var (
 	jsonMarshal   = json.Marshal
 	jsonUnmarshal = json.Unmarshal
 )
+
+// normalizePrefix coerces a group prefix to canonical form: empty or
+// "/" becomes "" (so joining with a pattern gives the pattern back
+// verbatim); any other non-slash-prefixed string gets a leading slash;
+// trailing slashes are stripped. Keeps the routing table's patterns
+// free of accidental "//foo" double slashes.
+func normalizePrefix(p string) string {
+	if p == "" || p == "/" {
+		return ""
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return strings.TrimRight(p, "/")
+}
+
+// joinPath glues a normalized group prefix to a per-route pattern so
+// the final registered route has no doubled or missing slashes.
+// "/foo" + "/bar" -> "/foo/bar"; "" + "/bar" -> "/bar"; "/foo" + "" -> "/foo".
+func joinPath(prefix, pattern string) string {
+	prefix = normalizePrefix(prefix)
+	if pattern == "" {
+		if prefix == "" {
+			return "/"
+		}
+		return prefix
+	}
+	if !strings.HasPrefix(pattern, "/") {
+		pattern = "/" + pattern
+	}
+	return prefix + pattern
+}
