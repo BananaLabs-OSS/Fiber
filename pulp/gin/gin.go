@@ -102,14 +102,44 @@ func (e *Engine) Handle(method, pattern string, handler HandlerFunc) *Engine {
 // Run registers every declared route with the host, installs a
 // pulp.OnStep dispatcher, and returns. Call this from your init() or
 // pulp.OnInit callback — it does not block.
+//
+// Plugins that need to run periodic work (polling, metrics) alongside
+// HTTP dispatch should call RegisterRoutes + pulp.OnStep themselves,
+// invoking Dispatch for HTTP events. See Dispatch for the idiom.
 func (e *Engine) Run(addr ...string) error {
+	if err := e.RegisterRoutes(); err != nil {
+		return err
+	}
+	pulp.OnStep(e.Dispatch)
+	return nil
+}
+
+// RegisterRoutes declares every route with the host without installing
+// a pulp.OnStep handler. Use when you compose a custom step handler
+// that dispatches HTTP events via Dispatch.
+func (e *Engine) RegisterRoutes() error {
 	for _, r := range e.routes {
 		if err := pulp.HTTP.Register(r.method, r.pattern); err != nil {
 			return fmt.Errorf("register %s %s: %w", r.method, r.pattern, err)
 		}
 	}
-	pulp.OnStep(e.dispatch)
 	return nil
+}
+
+// Dispatch routes a single step event to the matching HTTP handler.
+// Returns nil for non-HTTP events so it is safe to call unconditionally
+// from a composed OnStep. Plugins that need to run periodic work wrap
+// Dispatch in a closure:
+//
+//	r := pulpgin.New()
+//	r.GET(...)
+//	_ = r.RegisterRoutes()
+//	pulp.OnStep(func(ev pulp.StepEvent) error {
+//		myPeriodicWork(ev.WallTime)
+//		return r.Dispatch(ev)
+//	})
+func (e *Engine) Dispatch(ev pulp.StepEvent) error {
+	return e.dispatch(ev)
 }
 
 // dispatch is installed as the plugin's step handler. It receives every
