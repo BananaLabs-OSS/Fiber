@@ -206,6 +206,15 @@ func (c *Context) Data(status int, contentType string, data []byte) {
 	c.flush()
 }
 
+// Redirect sends an HTTP redirect response — sets the Location header
+// and status, typically 302 or 307. Mirrors gin.Context.Redirect.
+func (c *Context) Redirect(status int, url string) {
+	c.Header("Location", url)
+	c.status = uint32(status)
+	c.body = nil
+	c.flush()
+}
+
 // AbortWithStatus sends an empty response with the given status and
 // aborts the handler chain.
 func (c *Context) AbortWithStatus(status int) {
