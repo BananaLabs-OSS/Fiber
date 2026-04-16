@@ -28,6 +28,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/BananaLabs-OSS/Fiber/pulp"
 )
@@ -78,7 +79,7 @@ func (c *Conn) Begin() (driver.Tx, error) {
 	if c.inTx {
 		return nil, fmt.Errorf("nested transaction not supported")
 	}
-	if err := pulp.SQLite.Exec("BEGIN"); err != nil {
+	if _, err := pulp.SQLite.Exec("BEGIN"); err != nil {
 		return nil, fmt.Errorf("begin: %w", err)
 	}
 	c.inTx = true
@@ -110,16 +111,15 @@ func (*Stmt) Close() error { return nil }
 func (*Stmt) NumInput() int { return -1 }
 
 // Exec runs a non-query statement. Args are converted to []any for
-// delivery to the host.
+// delivery to the host; the host's ExecResult (rows_affected +
+// last_insert_id) is translated into a driver.Result so database/sql
+// callers like Bun can check update counts and insert IDs.
 func (s *Stmt) Exec(args []driver.Value) (driver.Result, error) {
-	if err := pulp.SQLite.Exec(s.query, driverValuesToAny(args)...); err != nil {
+	r, err := pulp.SQLite.Exec(s.query, driverValuesToAny(args)...)
+	if err != nil {
 		return nil, err
 	}
-	// Host does not report LastInsertId / RowsAffected yet; return a
-	// placeholder that answers "unsupported" to both. Bun reads
-	// RowsAffected for UPDATE/DELETE; if needed later, extend the
-	// host ABI to include those fields in ExecResult.
-	return emptyResult{}, nil
+	return execResult{rowsAffected: r.RowsAffected, lastInsertID: r.LastInsertID}, nil
 }
 
 // ExecContext is the context-aware variant. Context cancellation is
@@ -183,7 +183,7 @@ type Tx struct {
 
 // Commit closes the transaction with COMMIT.
 func (t *Tx) Commit() error {
-	if err := pulp.SQLite.Exec("COMMIT"); err != nil {
+	if _, err := pulp.SQLite.Exec("COMMIT"); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}
 	t.conn.inTx = false
@@ -192,24 +192,22 @@ func (t *Tx) Commit() error {
 
 // Rollback closes the transaction with ROLLBACK.
 func (t *Tx) Rollback() error {
-	if err := pulp.SQLite.Exec("ROLLBACK"); err != nil {
+	if _, err := pulp.SQLite.Exec("ROLLBACK"); err != nil {
 		return fmt.Errorf("rollback: %w", err)
 	}
 	t.conn.inTx = false
 	return nil
 }
 
-// emptyResult is returned from Exec until the host ABI exposes
-// LastInsertId / RowsAffected.
-type emptyResult struct{}
-
-func (emptyResult) LastInsertId() (int64, error) {
-	return 0, fmt.Errorf("LastInsertId not available: host ABI does not expose it yet")
+// execResult carries the rows-affected and last-insert-id fields that
+// the host's sqlite_exec reports.
+type execResult struct {
+	rowsAffected int64
+	lastInsertID int64
 }
 
-func (emptyResult) RowsAffected() (int64, error) {
-	return 0, fmt.Errorf("RowsAffected not available: host ABI does not expose it yet")
-}
+func (r execResult) LastInsertId() (int64, error) { return r.lastInsertID, nil }
+func (r execResult) RowsAffected() (int64, error) { return r.rowsAffected, nil }
 
 // driverValuesToAny adapts []driver.Value to []any for host delivery.
 func driverValuesToAny(in []driver.Value) []any {
@@ -239,11 +237,12 @@ func namedValuesToDriverValues(in []driver.NamedValue) []driver.Value {
 
 // toDriverValue coerces a decoded msgpack value into a type
 // database/sql accepts. msgpack/v5 decodes numbers as int64/uint64 or
-// float64, strings as string, byte slices as []byte, nil as nil —
-// all of which are already valid driver.Value types.
+// float64, strings as string, byte slices as []byte, nil as nil, and
+// timestamp-ext values as time.Time — all of which are already valid
+// driver.Value types or legal to hand off.
 func toDriverValue(v any) driver.Value {
 	switch x := v.(type) {
-	case nil, bool, int64, float64, []byte, string:
+	case nil, bool, int64, float64, []byte, string, time.Time:
 		return x
 	case uint64:
 		return int64(x)

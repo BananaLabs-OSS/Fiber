@@ -15,15 +15,23 @@ var SQLite = sqliteAPI{}
 type sqliteAPI struct{}
 
 //go:wasmimport pulp sqlite_exec
-func hostSQLiteExec(qPtr, qLen, pPtr, pLen uint32) uint32
+func hostSQLiteExec(qPtr, qLen, pPtr, pLen, resPtrOut, resLenOut uint32) uint32
 
 //go:wasmimport pulp sqlite_query
 func hostSQLiteQuery(qPtr, qLen, pPtr, pLen, rowsPtrOut, rowsLenOut uint32) uint32
 
+// ExecResult is what Exec returns: rows affected + last insert row ID.
+// Matches the host's msgpack shape.
+type ExecResult struct {
+	RowsAffected int64 `msgpack:"rows_affected"`
+	LastInsertID int64 `msgpack:"last_insert_id"`
+}
+
 // Exec runs a statement that does not return rows (INSERT, UPDATE,
 // DELETE, CREATE TABLE, etc.). args are positional parameters matching
-// SQLite ? placeholders.
-func (sqliteAPI) Exec(query string, args ...any) error {
+// SQLite ? placeholders. Returns the rows-affected count and the
+// last-insert row ID the host produced.
+func (sqliteAPI) Exec(query string, args ...any) (ExecResult, error) {
 	q := []byte(query)
 	var pPtr, pLen uint32
 	var paramBytes []byte
@@ -31,23 +39,34 @@ func (sqliteAPI) Exec(query string, args ...any) error {
 		var err error
 		paramBytes, err = msgpack.Marshal(args)
 		if err != nil {
-			return fmt.Errorf("encode args: %w", err)
+			return ExecResult{}, fmt.Errorf("encode args: %w", err)
 		}
 		pPtr = uint32(uintptr(unsafe.Pointer(&paramBytes[0])))
 		pLen = uint32(len(paramBytes))
 	}
+	var resPtr, resLen uint32
 	code := hostSQLiteExec(
 		uint32(uintptr(unsafe.Pointer(&q[0]))),
 		uint32(len(q)),
 		pPtr,
 		pLen,
+		uint32(uintptr(unsafe.Pointer(&resPtr))),
+		uint32(uintptr(unsafe.Pointer(&resLen))),
 	)
 	runtime.KeepAlive(q)
 	runtime.KeepAlive(paramBytes)
 	if code != 0 {
-		return fmt.Errorf("sqlite_exec host code %d", code)
+		return ExecResult{}, fmt.Errorf("sqlite_exec host code %d", code)
 	}
-	return nil
+	if resLen == 0 {
+		return ExecResult{}, nil
+	}
+	resBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(resPtr))), resLen)
+	var result ExecResult
+	if err := msgpack.Unmarshal(resBytes, &result); err != nil {
+		return ExecResult{}, fmt.Errorf("decode exec result: %w", err)
+	}
+	return result, nil
 }
 
 // QueryResult is what Query returns — column names plus rows, where

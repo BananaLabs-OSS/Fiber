@@ -1,6 +1,7 @@
 package gin
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -95,6 +96,14 @@ func (c *Context) MustGet(key string) any {
 // when you need fields Gin's Context does not expose (the raw request
 // ID, for instance).
 func (c *Context) Request() pulp.HTTPRequest { return c.req }
+
+// Ctx returns the per-request Go context. Gin handler code typically
+// calls c.Request.Context() for this — the pulpgin equivalent is
+// c.Ctx(). Currently always context.Background(); once Pulp propagates
+// host cancellation through step envelopes it will carry that signal.
+func (c *Context) Ctx() context.Context {
+	return context.Background()
+}
 
 // Param returns the path parameter captured at key. Returns empty
 // string if the param does not exist.

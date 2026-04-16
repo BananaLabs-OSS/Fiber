@@ -16,6 +16,14 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// ErrorResponse is the standard error shape every BananaKit service
+// returns. Matches Potassium's middleware.ErrorResponse byte-for-byte
+// so handler code that constructs these literals compiles unchanged.
+type ErrorResponse struct {
+	Error   string `json:"error"`
+	Message string `json:"message,omitempty"`
+}
+
 // Claims matches the claims BananAuth issues across the ecosystem.
 type Claims struct {
 	jwt.RegisteredClaims
