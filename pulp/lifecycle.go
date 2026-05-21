@@ -3,6 +3,7 @@ package pulp
 import (
 	"encoding/binary"
 	"fmt"
+	"sync"
 	"unsafe"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -10,7 +11,7 @@ import (
 
 // InitFunc is invoked during pulp_init with the MessagePack-encoded
 // [config] table from the manifest. Return a non-zero error to fail
-// plugin startup.
+// cell startup.
 type InitFunc func(config []byte) error
 
 // StepFunc is invoked on every pulp_step that carries an event. Idle
@@ -30,7 +31,7 @@ var (
 	userShutdown ShutdownFunc
 )
 
-// OnInit registers the function the plugin calls during pulp_init.
+// OnInit registers the function the cell calls during pulp_init.
 // Call this from an init() in your main package. Replacing a previous
 // registration is allowed.
 func OnInit(fn InitFunc) { userInit = fn }
@@ -41,19 +42,46 @@ func OnStep(fn StepFunc) { userStep = fn }
 // OnShutdown registers the function invoked for pulp_shutdown.
 func OnShutdown(fn ShutdownFunc) { userShutdown = fn }
 
+// allocTable keeps host-allocated buffers alive until pulp_free is
+// called (or the cell exits). Without this, a buffer returned from
+// pulpAlloc would be freed by Go's GC the moment pulpAlloc returns —
+// the host would then write response bytes into memory the cell
+// runtime has already reused for stack/heap, producing garbage on the
+// cell side. Observed in practice with Bananagine's FS.List where
+// the host encoded a valid 25-byte response but the cell saw 8
+// bytes of overwritten pointer data followed by more garbage.
+//
+// The map is guarded by a mutex because while WASM cells are
+// single-threaded, pulpAlloc may be called reentrantly (host → cell
+// → host → cell) and the scheduler can interleave goroutines if the
+// cell spawns them.
+var (
+	allocMu    sync.Mutex
+	allocTable = map[uint32][]byte{}
+)
+
 //go:wasmexport pulp_alloc
 func pulpAlloc(size uint32) uint32 {
 	if size == 0 {
 		return 0
 	}
 	buf := make([]byte, size)
-	return uint32(uintptr(unsafe.Pointer(&buf[0])))
+	ptr := uint32(uintptr(unsafe.Pointer(&buf[0])))
+	allocMu.Lock()
+	allocTable[ptr] = buf
+	allocMu.Unlock()
+	return ptr
 }
 
 //go:wasmexport pulp_free
 func pulpFree(ptr, size uint32) {
-	_ = ptr
 	_ = size
+	if ptr == 0 {
+		return
+	}
+	allocMu.Lock()
+	delete(allocTable, ptr)
+	allocMu.Unlock()
 }
 
 //go:wasmexport pulp_init

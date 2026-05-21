@@ -2,7 +2,14 @@ package gin
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"mime"
+	"net/http"
+	"net/url"
+	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/BananaLabs-OSS/Fiber/pulp"
@@ -17,8 +24,13 @@ type Context struct {
 	params    map[string]string
 	status    uint32
 	headers   map[string]string
+	cookies   []string // one formatted Set-Cookie value per entry
 	body      []byte
 	responded bool
+
+	// sameSite defaults to 0 (http.SameSiteDefaultMode). SetSameSite
+	// mutates it; the next SetCookie call consumes it.
+	sameSite http.SameSite
 
 	// handlers is the ordered middleware+handler chain for this route.
 	// Next() walks it; handlers read index to know where they are.
@@ -99,8 +111,18 @@ func (c *Context) Request() pulp.HTTPRequest { return c.req }
 
 // Ctx returns the per-request Go context. Gin handler code typically
 // calls c.Request.Context() for this — the pulpgin equivalent is
-// c.Ctx(). Currently always context.Background(); once Pulp propagates
-// host cancellation through step envelopes it will carry that signal.
+// c.Ctx().
+//
+// Limitation: this currently returns context.Background(). Plumbing
+// host request-cancellation through the ABI requires adding a
+// cancel-token channel to StepEvent + periodic host→cell notify,
+// which is a cross-repo ABI change. Until then, long-running cell
+// handlers cannot observe client disconnect via ctx.Done(). The
+// cell step loop is single-threaded so Go-level goroutine
+// cancellation inside a handler is a no-op anyway — this only
+// matters for HTTP clients (pulp.HTTP.Fetch) that honor the passed
+// context, where passing Background means no cancellation on client
+// disconnect. If you need that, use pulp.HTTPFetchRequest.Timeout.
 func (c *Context) Ctx() context.Context {
 	return context.Background()
 }
@@ -150,6 +172,65 @@ func (c *Context) GetHeader(key string) string {
 	return ""
 }
 
+// ClientIP returns the client's IP address. Mirrors gin.Context.ClientIP:
+// checks proxy headers in precedence order (CF-Connecting-IP, True-Client-IP,
+// X-Forwarded-For first hop, X-Real-Ip, RFC 7239 Forwarded), then falls
+// back to the host-populated RemoteAddr with the port stripped. Returns
+// empty string only when no address is available at all.
+func (c *Context) ClientIP() string {
+	if ip := c.GetHeader("CF-Connecting-IP"); ip != "" {
+		return strings.TrimSpace(ip)
+	}
+	if ip := c.GetHeader("True-Client-IP"); ip != "" {
+		return strings.TrimSpace(ip)
+	}
+	if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
+		if idx := strings.IndexByte(xff, ','); idx != -1 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
+	}
+	if rip := c.GetHeader("X-Real-Ip"); rip != "" {
+		return strings.TrimSpace(rip)
+	}
+	if fwd := c.GetHeader("Forwarded"); fwd != "" {
+		for _, part := range strings.Split(fwd, ";") {
+			part = strings.TrimSpace(part)
+			if strings.HasPrefix(strings.ToLower(part), "for=") {
+				v := strings.Trim(part[4:], `"`)
+				v = strings.TrimPrefix(v, "[")
+				if idx := strings.LastIndexByte(v, ']'); idx != -1 {
+					v = v[:idx]
+				}
+				if v != "" {
+					return v
+				}
+			}
+		}
+	}
+	// Fall back to the host-observed peer address. RemoteAddr is "host:port"
+	// (or "[host]:port" for IPv6); strip the port to match what proxy
+	// headers would carry.
+	addr := c.req.RemoteAddr
+	if addr == "" {
+		return ""
+	}
+	// IPv6 bracketed form: [::1]:1234
+	if strings.HasPrefix(addr, "[") {
+		if end := strings.LastIndexByte(addr, ']'); end != -1 {
+			return addr[1:end]
+		}
+	}
+	if idx := strings.LastIndexByte(addr, ':'); idx != -1 {
+		// Only strip if it looks like a port (no other colons, or IPv6 with port)
+		// For plain IPv4 "a.b.c.d:port" the last colon is the port separator.
+		if !strings.Contains(addr[:idx], ":") {
+			return addr[:idx]
+		}
+	}
+	return addr
+}
+
 // Header sets an outbound response header.
 func (c *Context) Header(key, value string) {
 	if c.headers == nil {
@@ -158,21 +239,77 @@ func (c *Context) Header(key, value string) {
 	c.headers[key] = value
 }
 
-// Status sets the HTTP status code for the response.
+// Status sets the HTTP status code and sends an empty response.
 func (c *Context) Status(code int) {
 	c.status = uint32(code)
+	c.flush()
 }
 
 // BindJSON unmarshals the request body as JSON into v. Returns the
 // json package's error unchanged.
 func (c *Context) BindJSON(v any) error {
-	return jsonUnmarshal(c.req.Body, v)
+	if err := jsonUnmarshal(c.req.Body, v); err != nil {
+		return err
+	}
+	return validateBinding(v)
 }
 
 // ShouldBindJSON is Gin's alias for BindJSON. Both exist because
 // different handler styles pick different names.
 func (c *Context) ShouldBindJSON(v any) error {
 	return c.BindJSON(v)
+}
+
+// validateBinding applies a minimal subset of go-playground/validator
+// rules — specifically `binding:"required"` — so cell handlers that
+// ported from native Gin with `binding:"required"` on their request
+// structs get the same 400-with-validation-error behavior instead of
+// silently accepting missing fields.
+//
+// Supported tags: "required". Other tags are accepted but not
+// enforced. Error format mirrors Gin's validator output so parity
+// tests pass without special-casing:
+//
+//	Key: 'LoginRequest.Email' Error:Field validation for 'Email' failed on the 'required' tag
+func validateBinding(v any) error {
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
+		return nil
+	}
+	rv = rv.Elem()
+	if rv.Kind() != reflect.Struct {
+		return nil
+	}
+	rt := rv.Type()
+	structName := rt.Name()
+	var messages []string
+	for i := 0; i < rt.NumField(); i++ {
+		field := rt.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+		tag := field.Tag.Get("binding")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		for _, rule := range strings.Split(tag, ",") {
+			rule = strings.TrimSpace(rule)
+			if rule != "required" {
+				continue
+			}
+			fv := rv.Field(i)
+			if fv.IsZero() {
+				messages = append(messages, fmt.Sprintf(
+					"Key: '%s.%s' Error:Field validation for '%s' failed on the 'required' tag",
+					structName, field.Name, field.Name,
+				))
+			}
+		}
+	}
+	if len(messages) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s", strings.Join(messages, "\n"))
 }
 
 // JSON writes status + a JSON-encoded body, sending the response.
@@ -233,8 +370,94 @@ func (c *Context) AbortWithStatusJSON(status int, obj any) {
 // Body returns the raw inbound request body.
 func (c *Context) Body() []byte { return c.req.Body }
 
+// Cookie returns the value of the named cookie from the request.
+// Returns ("", error) if the cookie is not present.
+func (c *Context) Cookie(name string) (string, error) {
+	header := c.GetHeader("Cookie")
+	if header == "" {
+		return "", fmt.Errorf("cookie %q not found", name)
+	}
+	for _, part := range strings.Split(header, ";") {
+		part = strings.TrimSpace(part)
+		if i := strings.IndexByte(part, '='); i > 0 {
+			if part[:i] == name {
+				return part[i+1:], nil
+			}
+		}
+	}
+	return "", fmt.Errorf("cookie %q not found", name)
+}
+
+// SetCookie adds a Set-Cookie header to the response. Mirrors gin's
+// SetCookie(name, value, maxAge, path, domain, secure, httpOnly).
+// Multiple SetCookie calls in the same response all land on the wire —
+// the host emits one Set-Cookie header per entry.
+//
+// The SameSite attribute is taken from the last SetSameSite call (or
+// http.SameSiteDefaultMode if none). Each SetCookie consumes and then
+// resets the sameSite flag, matching Gin's behavior.
+func (c *Context) SetCookie(name, value string, maxAge int, path, domain string, secure, httpOnly bool) {
+	cookie := name + "=" + value
+	if path != "" {
+		cookie += "; Path=" + path
+	}
+	if domain != "" {
+		cookie += "; Domain=" + domain
+	}
+	if maxAge > 0 {
+		cookie += "; Max-Age=" + fmt.Sprintf("%d", maxAge)
+	} else if maxAge < 0 {
+		cookie += "; Max-Age=0"
+	}
+	if secure {
+		cookie += "; Secure"
+	}
+	if httpOnly {
+		cookie += "; HttpOnly"
+	}
+	switch c.sameSite {
+	case http.SameSiteLaxMode:
+		cookie += "; SameSite=Lax"
+	case http.SameSiteStrictMode:
+		cookie += "; SameSite=Strict"
+	case http.SameSiteNoneMode:
+		cookie += "; SameSite=None"
+	}
+	c.sameSite = http.SameSiteDefaultMode
+	c.cookies = append(c.cookies, cookie)
+}
+
+// SetSameSite sets the SameSite attribute applied to the next SetCookie
+// call. Matches Gin's SetSameSite — it affects only the immediately
+// following SetCookie; a SetCookie without a prior SetSameSite emits
+// no SameSite attribute (browsers default to Lax).
+func (c *Context) SetSameSite(s http.SameSite) {
+	c.sameSite = s
+}
+
+// PostForm returns the first value for the named form field from a
+// application/x-www-form-urlencoded body. Values are URL-decoded so
+// that "%40" becomes "@" and "+" becomes " ", matching net/http.
+func (c *Context) PostForm(key string) string {
+	values, err := url.ParseQuery(string(c.req.Body))
+	if err != nil {
+		return ""
+	}
+	return values.Get(key)
+}
+
 // ContentType returns the inbound Content-Type header.
-func (c *Context) ContentType() string { return c.GetHeader("Content-Type") }
+// ContentType returns just the media-type portion of Content-Type,
+// stripping any "; charset=..." or other parameters, matching Gin's
+// filterFlags behavior. Cell handlers that compare against
+// "application/json" will match regardless of charset suffix.
+func (c *Context) ContentType() string {
+	ct := c.GetHeader("Content-Type")
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = ct[:i]
+	}
+	return strings.TrimSpace(ct)
+}
 
 // populateParams extracts :param segments from pattern, matching them
 // against the request path. The router has already verified that
@@ -250,6 +473,154 @@ func (c *Context) populateParams(pattern, path string) {
 	}
 }
 
+// ShouldBind dispatches to a binder based on the request Content-Type:
+// application/json → ShouldBindJSON; form-encoded (urlencoded or
+// multipart) → ShouldBindForm; anything else falls back to JSON. Matches
+// gin.Context.ShouldBind's contract for handler source compatibility.
+func (c *Context) ShouldBind(obj any) error {
+	ct := c.ContentType()
+	if i := strings.IndexByte(ct, ';'); i != -1 {
+		ct = ct[:i]
+	}
+	ct = strings.TrimSpace(strings.ToLower(ct))
+	switch ct {
+	case "application/json":
+		return c.ShouldBindJSON(obj)
+	case "application/x-www-form-urlencoded", "multipart/form-data":
+		return c.ShouldBindForm(obj)
+	default:
+		return c.ShouldBindJSON(obj)
+	}
+}
+
+// ShouldBindForm parses the request body as application/x-www-form-urlencoded
+// and populates obj by `form:"key"` tag. Multipart bodies are not parsed —
+// returns an explicit error in that case.
+func (c *Context) ShouldBindForm(obj any) error {
+	ct := c.ContentType()
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(ct)), "multipart/form-data") {
+		return fmt.Errorf("form binding not implemented for multipart/form-data — use ShouldBindJSON")
+	}
+	values, err := url.ParseQuery(string(c.req.Body))
+	if err != nil {
+		return err
+	}
+	return bindValues(obj, values, "form")
+}
+
+// ShouldBindQuery populates obj from the request's URL query string via
+// `form:"key"` tags. Mirrors gin.Context.ShouldBindQuery.
+func (c *Context) ShouldBindQuery(obj any) error {
+	values := url.Values{}
+	for k, v := range c.req.Query {
+		values.Set(k, v)
+	}
+	return bindValues(obj, values, "form")
+}
+
+// ShouldBindUri populates obj from path params via `uri:"key"` tags.
+// Mirrors gin.Context.ShouldBindUri.
+func (c *Context) ShouldBindUri(obj any) error {
+	values := url.Values{}
+	for k, v := range c.params {
+		values.Set(k, v)
+	}
+	return bindValues(obj, values, "uri")
+}
+
+// bindValues walks obj (must be pointer to struct) and assigns each field
+// from values using the given struct tag. Unsupported field types are
+// skipped silently — matches gin's permissive binder.
+func bindValues(obj any, values url.Values, tag string) error {
+	rv := reflect.ValueOf(obj)
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
+		return fmt.Errorf("bind target must be a non-nil pointer")
+	}
+	rv = rv.Elem()
+	if rv.Kind() != reflect.Struct {
+		return fmt.Errorf("bind target must point to a struct")
+	}
+	rt := rv.Type()
+	for i := 0; i < rt.NumField(); i++ {
+		field := rt.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+		key := field.Tag.Get(tag)
+		if key == "" {
+			continue
+		}
+		if idx := strings.IndexByte(key, ','); idx != -1 {
+			key = key[:idx]
+		}
+		if key == "" || key == "-" {
+			continue
+		}
+		raw, ok := values[key]
+		if !ok || len(raw) == 0 {
+			continue
+		}
+		fv := rv.Field(i)
+		if !fv.CanSet() {
+			continue
+		}
+		switch fv.Kind() {
+		case reflect.String:
+			fv.SetString(raw[0])
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			if n, err := strconv.ParseInt(raw[0], 10, 64); err == nil {
+				fv.SetInt(n)
+			}
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			if n, err := strconv.ParseUint(raw[0], 10, 64); err == nil {
+				fv.SetUint(n)
+			}
+		case reflect.Float32, reflect.Float64:
+			if f, err := strconv.ParseFloat(raw[0], 64); err == nil {
+				fv.SetFloat(f)
+			}
+		case reflect.Bool:
+			if b, err := strconv.ParseBool(raw[0]); err == nil {
+				fv.SetBool(b)
+			}
+		case reflect.Slice:
+			if fv.Type().Elem().Kind() == reflect.String {
+				fv.Set(reflect.ValueOf(append([]string(nil), raw...)))
+			}
+		default:
+			// Unsupported (nested struct, time.Time, etc.) — skip silently.
+		}
+	}
+	return nil
+}
+
+// File reads filepath from the cell's scoped storage and writes it as
+// the response body. Content-Type is inferred from the file extension.
+// Missing files produce 404 (matches Gin); other errors produce 500.
+func (c *Context) File(filepath_ string) {
+	data, err := pulp.FS.Read(filepath_)
+	if err != nil {
+		if errors.Is(err, pulp.ErrNotFound) {
+			c.String(404, "404 page not found")
+			return
+		}
+		c.String(500, "file error: %v", err)
+		return
+	}
+	ct := mime.TypeByExtension(filepath.Ext(filepath_))
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+	c.Data(200, ct, data)
+}
+
+// FileFromFS is a stub — WASM cells have no access to arbitrary
+// http.FileSystem handles. Present only to satisfy handler code ported
+// from a stock Gin service.
+func (c *Context) FileFromFS(filepath_ string, fs http.FileSystem) {
+	c.String(500, "FileFromFS not supported in WASM cells")
+}
+
 // flush hands the accumulated response to the host. Safe to call
 // multiple times — subsequent calls are no-ops after the first.
 func (c *Context) flush() {
@@ -261,6 +632,7 @@ func (c *Context) flush() {
 		ID:      c.req.ID,
 		Status:  c.status,
 		Headers: c.headers,
+		Cookies: c.cookies,
 		Body:    c.body,
 	})
 }

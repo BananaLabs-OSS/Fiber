@@ -9,7 +9,7 @@ import (
 )
 
 // WS groups host-import wrappers for the transport.ws.inbound
-// capability. The plugin must declare "transport.ws.inbound" in its
+// capability. The cell must declare "transport.ws.inbound" in its
 // manifest for these to bind.
 var WS = wsAPI{}
 
@@ -25,7 +25,7 @@ func hostWSSend(ptr, ln uint32) uint32
 func hostWSClose(ptr, ln uint32) uint32
 
 // Register declares an inbound WebSocket route. The host begins
-// routing upgrade requests to this plugin after Register returns.
+// routing upgrade requests to this cell after Register returns.
 func (wsAPI) Register(path string) error {
 	p := []byte(path)
 	code := hostWSRegister(uint32(uintptr(unsafe.Pointer(&p[0]))), uint32(len(p)))

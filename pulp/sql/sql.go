@@ -1,6 +1,6 @@
 // Package sql is a database/sql driver backed by Pulp's storage.sqlite
 // capability. Importing this package (for side effects) registers the
-// driver under the name "pulp", so plugins can use Go's standard
+// driver under the name "pulp", so cells can use Go's standard
 // database/sql surface — and any library that accepts a *sql.DB, such
 // as Bun, GORM, sqlx — against a Pulp-hosted SQLite database.
 //
@@ -17,9 +17,9 @@
 //	// With Bun:
 //	bdb := bun.NewDB(db, sqlitedialect.New())
 //
-// The plugin manifest must declare "storage.sqlite" in capabilities.
+// The cell manifest must declare "storage.sqlite" in capabilities.
 // The DSN is ignored — the host assigns the database path based on
-// the plugin name and the host's -storage-root flag.
+// the cell name and the host's -storage-root flag.
 package sql
 
 import (
@@ -28,6 +28,8 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"io"
+	"math"
+	"strconv"
 	"time"
 
 	"github.com/BananaLabs-OSS/Fiber/pulp"
@@ -41,8 +43,8 @@ func init() {
 }
 
 // Driver implements database/sql/driver.Driver. Open ignores its
-// argument — there is exactly one database per plugin, assigned by
-// the host, and the plugin does not choose its path.
+// argument — there is exactly one database per cell, assigned by
+// the host, and the cell does not choose its path.
 type Driver struct{}
 
 // Open returns a new Conn. The dsn argument is ignored; pass any
@@ -51,7 +53,7 @@ func (*Driver) Open(_ string) (driver.Conn, error) {
 	return &Conn{}, nil
 }
 
-// Conn represents the plugin's single logical connection to the host
+// Conn represents the cell's single logical connection to the host
 // SQLite database. Connection pooling on the Go side is a no-op
 // because the host pins its own pool to one connection; multiple
 // Conn values share the same underlying database transparently.
@@ -73,7 +75,7 @@ func (c *Conn) Prepare(query string) (driver.Stmt, error) {
 func (*Conn) Close() error { return nil }
 
 // Begin starts a transaction by issuing BEGIN. Because the host pins
-// MaxOpenConns to 1, all subsequent statements on this plugin land
+// MaxOpenConns to 1, all subsequent statements on this cell land
 // on the same connection, so BEGIN/COMMIT work as expected.
 func (c *Conn) Begin() (driver.Tx, error) {
 	if c.inTx {
@@ -93,7 +95,7 @@ func (c *Conn) BeginTx(_ context.Context, _ driver.TxOptions) (driver.Tx, error)
 	return c.Begin()
 }
 
-// Ping is a no-op; the host is always available during plugin lifetime.
+// Ping is a no-op; the host is always available during cell lifetime.
 func (*Conn) Ping(_ context.Context) error { return nil }
 
 // Stmt is a prepared statement. It holds the query text and a back
@@ -122,10 +124,19 @@ func (s *Stmt) Exec(args []driver.Value) (driver.Result, error) {
 	return execResult{rowsAffected: r.RowsAffected, lastInsertID: r.LastInsertID}, nil
 }
 
-// ExecContext is the context-aware variant. Context cancellation is
-// not plumbed to the host.
-func (s *Stmt) ExecContext(_ context.Context, args []driver.NamedValue) (driver.Result, error) {
-	return s.Exec(namedValuesToDriverValues(args))
+// ExecContext is the context-aware variant. The host call is
+// synchronous through WASM so we cannot cancel mid-statement, but we
+// honor already-cancelled contexts before entering the host and after
+// it returns.
+func (s *Stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	res, err := s.Exec(namedValuesToDriverValues(args))
+	if err != nil {
+		return res, err
+	}
+	return res, ctx.Err()
 }
 
 // Query runs a SELECT statement and returns a driver.Rows.
@@ -137,9 +148,23 @@ func (s *Stmt) Query(args []driver.Value) (driver.Rows, error) {
 	return &Rows{columns: result.Columns, rows: result.Rows}, nil
 }
 
-// QueryContext is the context-aware variant.
-func (s *Stmt) QueryContext(_ context.Context, args []driver.NamedValue) (driver.Rows, error) {
-	return s.Query(namedValuesToDriverValues(args))
+// QueryContext is the context-aware variant. Like ExecContext, we
+// honor ctx.Err() before and after the host call.
+func (s *Stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	rows, err := s.Query(namedValuesToDriverValues(args))
+	if err != nil {
+		return rows, err
+	}
+	if cerr := ctx.Err(); cerr != nil {
+		if rows != nil {
+			_ = rows.Close()
+		}
+		return nil, cerr
+	}
+	return rows, nil
 }
 
 // Rows iterates a materialized query result.
@@ -240,20 +265,40 @@ func namedValuesToDriverValues(in []driver.NamedValue) []driver.Value {
 // float64, strings as string, byte slices as []byte, nil as nil, and
 // timestamp-ext values as time.Time — all of which are already valid
 // driver.Value types or legal to hand off.
+//
+// uint64 values above MaxInt64 are returned as decimal strings so the
+// magnitude is preserved (int64 would silently overflow). Scanners
+// targeting an integer field will error rather than read a wrong value.
 func toDriverValue(v any) driver.Value {
 	switch x := v.(type) {
 	case nil, bool, int64, float64, []byte, string, time.Time:
 		return x
 	case uint64:
+		if x <= math.MaxInt64 {
+			return int64(x)
+		}
+		return strconv.FormatUint(x, 10)
+	case uint:
+		if uint64(x) <= math.MaxInt64 {
+			return int64(x)
+		}
+		return strconv.FormatUint(uint64(x), 10)
+	case uint32:
+		return int64(x)
+	case uint16:
+		return int64(x)
+	case uint8:
 		return int64(x)
 	case int:
 		return int64(x)
 	case int32:
 		return int64(x)
+	case int16:
+		return int64(x)
 	case int8:
 		return int64(x)
-	case uint8:
-		return int64(x)
+	case float32:
+		return float64(x)
 	default:
 		return fmt.Sprintf("%v", x)
 	}

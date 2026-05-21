@@ -1,5 +1,5 @@
 // Package gin is a Gin-compatible HTTP router that runs inside a Pulp
-// plugin. Existing Gin handler code compiles unchanged — only the
+// cell. Existing Gin handler code compiles unchanged — only the
 // bootstrap swaps (gin.Default() → pulpgin.New()). Handlers receive a
 // *pulpgin.Context with Gin-identical methods.
 //
@@ -41,7 +41,7 @@ type H map[string]any
 // Engine is the router. It owns the full route table and the root
 // middleware stack; Group creates a RouterGroup that inherits the
 // current middleware and adds a path prefix. The engine also owns the
-// WebSocket route table; plugins use Engine.WS to register ws.* routes.
+// WebSocket route table; cells use Engine.WS to register ws.* routes.
 type Engine struct {
 	routes     []route
 	wsRoutes   []wsRoute
@@ -198,7 +198,7 @@ func (g *RouterGroup) Handle(method, pattern string, handler HandlerFunc) *Route
 // pulp.OnStep dispatcher, and returns. Call this from your init() or
 // pulp.OnInit callback — it does not block.
 //
-// Plugins that need to run periodic work (polling, metrics) alongside
+// Cells that need to run periodic work (polling, metrics) alongside
 // HTTP dispatch should call RegisterRoutes + pulp.OnStep themselves,
 // invoking Dispatch for HTTP events. See Dispatch for the idiom.
 func (e *Engine) Run(addr ...string) error {
@@ -249,7 +249,7 @@ func paramCount(pattern string) int {
 
 // Dispatch routes a single step event to the matching handler — HTTP
 // or WebSocket. Returns nil for events the engine does not own, so
-// it is safe to call unconditionally from a composed OnStep. Plugins
+// it is safe to call unconditionally from a composed OnStep. Cells
 // that need to run periodic work wrap Dispatch in a closure:
 //
 //	r := pulpgin.New()
@@ -270,7 +270,7 @@ func (e *Engine) Dispatch(ev pulp.StepEvent) error {
 	return nil
 }
 
-// dispatch is installed as the plugin's step handler. It receives every
+// dispatch is installed as the cell's step handler. It receives every
 // event the host delivers, filters for HTTP requests, finds a matching
 // route, and invokes the handler with a populated Context.
 func (e *Engine) dispatch(ev pulp.StepEvent) error {
@@ -302,12 +302,37 @@ func (e *Engine) dispatch(ev pulp.StepEvent) error {
 		return nil
 	}
 
-	// No route matched. Respond 404 via the host.
+	// CORS preflight fallback: if the request is OPTIONS and ANY route
+	// exists at this path (any method), reuse that route's handler chain
+	// so engine middleware (CORS) runs and returns the preflight 204.
+	// Native Gin auto-handles OPTIONS for paths with other methods; the
+	// Pulp port doesn't, so cells that rely on a global CORS middleware
+	// would otherwise 404 on every preflight.
+	if req.Method == "OPTIONS" {
+		for _, r := range e.routes {
+			if !matchPattern(r.pattern, req.Path) {
+				continue
+			}
+			c := &Context{req: req, handlers: r.handlers}
+			c.populateParams(r.pattern, req.Path)
+			c.Next()
+			if !c.responded {
+				c.Status(204)
+				c.flush()
+			}
+			return nil
+		}
+	}
+
+	// No route matched. Respond 404 with the exact shape Gin's default
+	// NoRoute emits (plain "text/plain" content type, "404 page not
+	// found" body), so parity tests comparing against a native Gin
+	// server pass without special-casing the 404 body.
 	return pulp.HTTP.Respond(pulp.HTTPResponse{
 		ID:      req.ID,
 		Status:  404,
-		Headers: map[string]string{"Content-Type": "text/plain; charset=utf-8"},
-		Body:    []byte("404 not found\n"),
+		Headers: map[string]string{"Content-Type": "text/plain"},
+		Body:    []byte("404 page not found"),
 	})
 }
 

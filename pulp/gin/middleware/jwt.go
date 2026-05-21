@@ -1,4 +1,4 @@
-// Package middleware provides ready-made middleware for plugins using
+// Package middleware provides ready-made middleware for cells using
 // the pulpgin router. It mirrors Potassium's auth middleware so
 // existing handler code that reads "account_id" and "session_id" from
 // the context works without changes.

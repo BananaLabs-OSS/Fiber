@@ -1,6 +1,6 @@
 # Fiber — Go SDK
 
-Plugin-authoring helpers and service SDKs for the [Pulp](https://github.com/BananaLabs-OSS/Pulp) application runtime.
+Cell-authoring helpers and service SDKs for the [Pulp](https://github.com/BananaLabs-OSS/Pulp) application runtime.
 
 The Go SDK lives on this branch. Other language SDKs are on their own branches:
 - `go` — this branch
@@ -10,8 +10,8 @@ The `main` branch is pure documentation.
 
 ## Packages
 
-- **`pulp/`** — plugin-authoring helpers. Drop-in glue for writing Pulp plugins in Go: the required WASM exports (`pulp_alloc`, `pulp_init`, `pulp_step`, `pulp_shutdown`), typed request/response envelopes, and thin wrappers over host imports (HTTP, fs, sqlite).
-- **`pulp/gin/`** — Gin-compatible router that runs inside a Pulp plugin. Lets existing Gin handler code run unchanged — only the bootstrap (`gin.Default() → pulpgin.New()`) changes.
+- **`pulp/`** — cell-authoring helpers. Drop-in glue for writing Pulp cells in Go: the required WASM exports (`pulp_alloc`, `pulp_init`, `pulp_step`, `pulp_shutdown`), typed request/response envelopes, and thin wrappers over host imports (HTTP, fs, sqlite).
+- **`pulp/gin/`** — Gin-compatible router that runs inside a Pulp cell. Lets existing Gin handler code run unchanged — only the bootstrap (`gin.Default() → pulpgin.New()`) changes.
 
 ## Install
 
@@ -26,10 +26,10 @@ import "github.com/BananaLabs-OSS/Fiber/pulp"
 import pulpgin "github.com/BananaLabs-OSS/Fiber/pulp/gin"
 ```
 
-Build any plugin with:
+Build any cell with:
 
 ```sh
-GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o plugin.wasm .
+GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o cell.wasm .
 ```
 
 ## Hello world
@@ -50,7 +50,7 @@ func init() {
 }
 ```
 
-Manifest (`pulp.plugin.toml`):
+Manifest (`pulp.cell.toml`):
 
 ```toml
 name = "hello"
