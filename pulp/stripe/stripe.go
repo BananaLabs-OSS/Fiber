@@ -72,6 +72,18 @@ func hostInvoiceItemCreate(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
 //go:wasmimport pulp stripe_balance_get
 func hostBalanceGet(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
 
+//go:wasmimport pulp stripe_coupon_create
+func hostCouponCreate(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
+
+//go:wasmimport pulp stripe_promotion_code_create
+func hostPromotionCodeCreate(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
+
+//go:wasmimport pulp stripe_promotion_code_lookup
+func hostPromotionCodeLookup(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
+
+//go:wasmimport pulp stripe_promotion_code_update
+func hostPromotionCodeUpdate(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
+
 // ErrStripeSignatureInvalid is returned by VerifyWebhook when the
 // Stripe-Signature header did not validate against the raw payload.
 var ErrStripeSignatureInvalid = errors.New("pulp/stripe: webhook signature invalid")
@@ -141,6 +153,12 @@ type PaymentIntent struct {
 // PaymentIntentCreateRequest carries the fields Stripe's PaymentIntent
 // create endpoint accepts. CaptureMethod is "automatic" (default) or
 // "manual" (for two-phase capture flows like pools).
+//
+// PromotionCodeID — when set, the host stamps the Stripe PromotionCode ID
+// into metadata so the resulting charge can be linked back to the
+// redemption. Stripe's PaymentIntent API doesn't accept a Discounts param
+// directly (only Checkout Sessions / Invoices do), so the caller has
+// already subtracted the discount from AmountCents.
 type PaymentIntentCreateRequest struct {
 	AmountCents        int64             `msgpack:"amount_cents"`
 	Currency           string            `msgpack:"currency"`
@@ -151,6 +169,7 @@ type PaymentIntentCreateRequest struct {
 	Customer           string            `msgpack:"customer,omitempty"`
 	Metadata           map[string]string `msgpack:"metadata,omitempty"`
 	IdempotencyKey     string            `msgpack:"idempotency_key,omitempty"`
+	PromotionCodeID    string            `msgpack:"promotion_code_id,omitempty"`
 }
 
 // Customer is a Stripe customer object (ID + email, which are the
@@ -181,12 +200,19 @@ type Invoice struct {
 
 // InvoiceCreateRequest creates a draft invoice for customer; set
 // AutoAdvance=true to have Stripe auto-finalize and attempt payment.
+//
+// PromotionCodeID — when set, applied as an Invoice-level Stripe-native
+// discount. Use this in place of the legacy paired-invoice-item $0
+// hack: a single Invoice carrying a 100%-off (or N-cent-off)
+// PromotionCode lets Stripe compute the discount on its side and the
+// resulting Invoice carries the native discount record.
 type InvoiceCreateRequest struct {
 	Customer         string            `msgpack:"customer"`
 	Description      string            `msgpack:"description,omitempty"`
 	AutoAdvance      bool              `msgpack:"auto_advance,omitempty"`
 	CollectionMethod string            `msgpack:"collection_method,omitempty"`
 	Metadata         map[string]string `msgpack:"metadata,omitempty"`
+	PromotionCodeID  string            `msgpack:"promotion_code_id,omitempty"`
 }
 
 // InvoiceItem is the response of CreateInvoiceItem — just the ID.
@@ -574,6 +600,153 @@ func GetBalance() (Balance, error) {
 	var resp Balance
 	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
 		return Balance{}, fmt.Errorf("decode balance: %w", err)
+	}
+	return resp, nil
+}
+
+// --- Stripe-native Coupon + PromotionCode -------------------------------
+//
+// A Coupon is the immutable discount shape (amount or percent off, duration,
+// max redemptions). A PromotionCode is the customer-facing string that
+// resolves to a Coupon. Cells always pair them: create Coupon →
+// create PromotionCode referencing the Coupon's ID. At checkout, look up
+// the PromotionCode by its customer-facing code and pass the resulting ID
+// into PaymentIntentCreateRequest.PromotionCodeID.
+
+// CouponCreateRequest is the input to CreateCoupon. Exactly one of
+// AmountOffCents or PercentOff must be set. Duration is "once"
+// (single-use), "repeating" (DurationMonths required), or "forever".
+type CouponCreateRequest struct {
+	AmountOffCents int64             `msgpack:"amount_off_cents,omitempty"`
+	PercentOff     float64           `msgpack:"percent_off,omitempty"`
+	Currency       string            `msgpack:"currency,omitempty"`
+	Duration       string            `msgpack:"duration"`
+	DurationMonths int               `msgpack:"duration_months,omitempty"`
+	MaxRedemptions int               `msgpack:"max_redemptions,omitempty"`
+	RedeemBy       int64             `msgpack:"redeem_by,omitempty"`
+	Name           string            `msgpack:"name,omitempty"`
+	Metadata       map[string]string `msgpack:"metadata,omitempty"`
+}
+
+// Coupon is the decoded response from CreateCoupon.
+type Coupon struct {
+	ID         string  `msgpack:"id"`
+	Valid      bool    `msgpack:"valid"`
+	AmountOff  int64   `msgpack:"amount_off,omitempty"`
+	PercentOff float64 `msgpack:"percent_off,omitempty"`
+	Currency   string  `msgpack:"currency,omitempty"`
+	Duration   string  `msgpack:"duration,omitempty"`
+}
+
+// PromotionCodeCreateRequest is the input to CreatePromotionCode.
+// Active default true is the typical path; pass false only when
+// pre-creating a code that should not be redeemable yet.
+type PromotionCodeCreateRequest struct {
+	CouponID       string            `msgpack:"coupon_id"`
+	Code           string            `msgpack:"code,omitempty"`
+	Active         bool              `msgpack:"active,omitempty"`
+	MaxRedemptions int               `msgpack:"max_redemptions,omitempty"`
+	ExpiresAt      int64             `msgpack:"expires_at,omitempty"`
+	Customer       string            `msgpack:"customer,omitempty"`
+	Metadata       map[string]string `msgpack:"metadata,omitempty"`
+}
+
+// PromotionCode is the decoded response from CreatePromotionCode and
+// LookupPromotionCode. Coupon snapshot fields are included so callers
+// can validate a redemption without a second roundtrip.
+type PromotionCode struct {
+	ID             string  `msgpack:"id"`
+	Code           string  `msgpack:"code"`
+	CouponID       string  `msgpack:"coupon_id"`
+	Active         bool    `msgpack:"active"`
+	MaxRedemptions int64   `msgpack:"max_redemptions,omitempty"`
+	TimesRedeemed  int64   `msgpack:"times_redeemed"`
+	ExpiresAt      int64   `msgpack:"expires_at,omitempty"`
+	AmountOff      int64   `msgpack:"amount_off,omitempty"`
+	PercentOff     float64 `msgpack:"percent_off,omitempty"`
+	Currency       string  `msgpack:"currency,omitempty"`
+}
+
+// CreateCoupon creates a Stripe Coupon (the discount shape). Pair with
+// CreatePromotionCode immediately — Coupons aren't customer-facing on
+// their own. Returns the Coupon ID which feeds into PromotionCode create.
+func CreateCoupon(req CouponCreateRequest) (Coupon, error) {
+	data, err := msgpack.Marshal(req)
+	if err != nil {
+		return Coupon{}, fmt.Errorf("encode coupon: %w", err)
+	}
+	var respPtr, respLen uint32
+	code := hostCouponCreate(
+		uint32(uintptr(unsafe.Pointer(&data[0]))),
+		uint32(len(data)),
+		uint32(uintptr(unsafe.Pointer(&respPtr))),
+		uint32(uintptr(unsafe.Pointer(&respLen))),
+	)
+	runtime.KeepAlive(data)
+	if err := codeToError("stripe_coupon_create", code); err != nil {
+		return Coupon{}, err
+	}
+	if respLen == 0 {
+		return Coupon{}, fmt.Errorf("stripe_coupon_create: empty response")
+	}
+	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	var resp Coupon
+	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+		return Coupon{}, fmt.Errorf("decode coupon: %w", err)
+	}
+	return resp, nil
+}
+
+// CreatePromotionCode creates a customer-facing code that resolves to a
+// previously-created Coupon. Pass the Coupon.ID from CreateCoupon.
+func CreatePromotionCode(req PromotionCodeCreateRequest) (PromotionCode, error) {
+	return promotionCodeRoundtrip("stripe_promotion_code_create", hostPromotionCodeCreate, req)
+}
+
+// LookupPromotionCode resolves a customer-facing code string to a Stripe
+// PromotionCode object. Returns a zero-value PromotionCode (empty ID)
+// when the code doesn't exist — callers should check ID == "".
+func LookupPromotionCode(code string) (PromotionCode, error) {
+	return promotionCodeRoundtrip("stripe_promotion_code_lookup", hostPromotionCodeLookup, struct {
+		Code string `msgpack:"code"`
+	}{Code: code})
+}
+
+// UpdatePromotionCode flips the active flag on a PromotionCode. Stripe
+// disallows deletion of Coupons that have been redeemed; this is the
+// canonical "retire a code" operation.
+func UpdatePromotionCode(id string, active bool) (PromotionCode, error) {
+	return promotionCodeRoundtrip("stripe_promotion_code_update", hostPromotionCodeUpdate, struct {
+		ID     string `msgpack:"id"`
+		Active bool   `msgpack:"active"`
+	}{ID: id, Active: active})
+}
+
+// promotionCodeRoundtrip is the shared encode/call/decode helper for the
+// three PromotionCode operations that share a response shape.
+func promotionCodeRoundtrip(op string, hostFn func(uint32, uint32, uint32, uint32) uint32, req any) (PromotionCode, error) {
+	data, err := msgpack.Marshal(req)
+	if err != nil {
+		return PromotionCode{}, fmt.Errorf("encode %s: %w", op, err)
+	}
+	var respPtr, respLen uint32
+	code := hostFn(
+		uint32(uintptr(unsafe.Pointer(&data[0]))),
+		uint32(len(data)),
+		uint32(uintptr(unsafe.Pointer(&respPtr))),
+		uint32(uintptr(unsafe.Pointer(&respLen))),
+	)
+	runtime.KeepAlive(data)
+	if err := codeToError(op, code); err != nil {
+		return PromotionCode{}, err
+	}
+	if respLen == 0 {
+		return PromotionCode{}, nil
+	}
+	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	var resp PromotionCode
+	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+		return PromotionCode{}, fmt.Errorf("decode %s: %w", op, err)
 	}
 	return resp, nil
 }
