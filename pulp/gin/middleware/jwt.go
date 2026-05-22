@@ -9,6 +9,7 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"strings"
 
@@ -62,7 +63,10 @@ func ServiceAuth(serviceSecret string) pulpgin.HandlerFunc {
 			c.AbortWithStatusJSON(401, pulpgin.H{"error": "missing service token"})
 			return
 		}
-		if token != serviceSecret {
+		// Constant-time compare prevents timing side-channel attacks
+		// that could let a network-adjacent attacker recover the
+		// service secret one byte at a time.
+		if subtle.ConstantTimeCompare([]byte(token), []byte(serviceSecret)) != 1 {
 			c.AbortWithStatusJSON(401, pulpgin.H{"error": "invalid service token"})
 			return
 		}

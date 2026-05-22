@@ -616,6 +616,13 @@ func GetBalance() (Balance, error) {
 // CouponCreateRequest is the input to CreateCoupon. Exactly one of
 // AmountOffCents or PercentOff must be set. Duration is "once"
 // (single-use), "repeating" (DurationMonths required), or "forever".
+//
+// IdempotencyKey — when set, the host attaches Stripe's
+// Idempotency-Key header so retried calls return the original Coupon
+// rather than minting a duplicate. Pair with the matching PromotionCode
+// create on the same key family (e.g. couponID+":stripe-coupon" and
+// couponID+":stripe-promo") so a partial-failure retry can't orphan a
+// Stripe-side Coupon.
 type CouponCreateRequest struct {
 	AmountOffCents int64             `msgpack:"amount_off_cents,omitempty"`
 	PercentOff     float64           `msgpack:"percent_off,omitempty"`
@@ -626,6 +633,7 @@ type CouponCreateRequest struct {
 	RedeemBy       int64             `msgpack:"redeem_by,omitempty"`
 	Name           string            `msgpack:"name,omitempty"`
 	Metadata       map[string]string `msgpack:"metadata,omitempty"`
+	IdempotencyKey string            `msgpack:"idempotency_key,omitempty"`
 }
 
 // Coupon is the decoded response from CreateCoupon.
@@ -649,6 +657,14 @@ type PromotionCodeCreateRequest struct {
 	ExpiresAt      int64             `msgpack:"expires_at,omitempty"`
 	Customer       string            `msgpack:"customer,omitempty"`
 	Metadata       map[string]string `msgpack:"metadata,omitempty"`
+	// IdempotencyKey — when set, the host attaches Stripe's
+	// Idempotency-Key header so a retried PromotionCode create after a
+	// partial failure short-circuits to the original record rather than
+	// minting a duplicate. Pair with the matching Coupon create on the
+	// same key family (e.g. couponID+":stripe-coupon" and
+	// couponID+":stripe-promo") so the two-step Coupon+PromotionCode
+	// flow is retry-safe end-to-end.
+	IdempotencyKey string `msgpack:"idempotency_key,omitempty"`
 }
 
 // PromotionCode is the decoded response from CreatePromotionCode and
