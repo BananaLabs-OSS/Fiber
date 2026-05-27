@@ -101,6 +101,7 @@ type CheckoutRequest struct {
 	ProductName        string            `msgpack:"product_name"`
 	ProductDescription string            `msgpack:"product_description,omitempty"`
 	Metadata           map[string]string `msgpack:"metadata,omitempty"`
+	AutomaticTax       bool              `msgpack:"automatic_tax,omitempty"`
 }
 
 // CheckoutSession is the decoded response — the Session ID (for later
@@ -170,6 +171,7 @@ type PaymentIntentCreateRequest struct {
 	Metadata           map[string]string `msgpack:"metadata,omitempty"`
 	IdempotencyKey     string            `msgpack:"idempotency_key,omitempty"`
 	PromotionCodeID    string            `msgpack:"promotion_code_id,omitempty"`
+	AutomaticTax       bool              `msgpack:"automatic_tax,omitempty"`
 }
 
 // Customer is a Stripe customer object (ID + email, which are the
