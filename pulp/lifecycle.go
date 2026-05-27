@@ -110,6 +110,9 @@ func pulpStep(inputPtr, inputLen uint32) int32 {
 	callNumber := binary.LittleEndian.Uint64(raw[0:8])
 	wallTime := binary.LittleEndian.Uint64(raw[8:16])
 	payloadLen := binary.LittleEndian.Uint32(raw[16:20])
+	if 20+payloadLen > uint32(inputLen) {
+		return 1
+	}
 	if payloadLen == 0 {
 		// Tick — no event. Stay silent, give idle callbacks in a
 		// future release if anyone needs them.
