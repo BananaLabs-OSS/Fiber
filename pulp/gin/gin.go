@@ -51,12 +51,27 @@ type Engine struct {
 	// trustedProxies is the set of CIDRs whose forwarded headers
 	// (CF-Connecting-IP / X-Forwarded-For / …) ClientIP() is allowed to
 	// trust. It is consulted against the host-observed RemoteAddr (the
-	// real immediate peer). Default: nil → trust NOTHING, so ClientIP()
-	// returns RemoteAddr verbatim and forwarded headers are ignored.
-	// This is the secure default: a client that talks to the cell origin
-	// directly cannot spoof its IP via a header. Set it (SetTrustedProxies
-	// / TrustCloudflare) only for the edge the deployment actually sits
-	// behind. See Context.ClientIP.
+	// real immediate peer).
+	//
+	// DEPLOYMENT ASSUMPTION: every Pulp cell on this platform is served
+	// from behind Cloudflare (client → CF edge → cell origin). The host
+	// populates RemoteAddr with the immediate TCP peer, which in that
+	// topology is a Cloudflare edge IP, and CF sets the real client IP in
+	// the CF-Connecting-IP header (a header CF fully controls and that a
+	// client cannot forge *through* CF). New() therefore defaults this set
+	// to Cloudflare's published edge ranges (cloudflareCIDRs), so the
+	// out-of-the-box ClientIP() returns the real client IP in production.
+	//
+	// The anti-spoof property is preserved: forwarded headers are honored
+	// ONLY when the immediate peer is inside this set. A direct / non-CF
+	// peer (not in any trusted range) can set CF-Connecting-IP /
+	// X-Forwarded-For / X-Real-Ip / True-Client-IP all it wants — none are
+	// trusted, and ClientIP() returns the raw peer instead.
+	//
+	// Non-CF deployments (direct origin, a different ingress CIDR, an
+	// internal service mesh) override via SetTrustedProxies — pass nil/empty
+	// to trust nothing, or the actual ingress CIDR to trust that hop.
+	// See Context.ClientIP.
 	trustedProxies []*net.IPNet
 }
 
@@ -162,8 +177,21 @@ type route struct {
 
 // New returns a fresh Engine. Multiple engines are not supported — the
 // last one to call Run wins the pulp.OnStep registration.
+//
+// The engine defaults to trusting Cloudflare's edge ranges (see
+// Engine.trustedProxies), because every cell on this platform is deployed
+// behind Cloudflare. This makes ClientIP() return the real client IP from
+// CF-Connecting-IP out of the box, while still refusing to trust forwarded
+// headers from any peer outside the Cloudflare ranges (anti-spoof).
+// Non-CF deployments override with Engine.SetTrustedProxies (pass nil to
+// trust nothing).
 func New() *Engine {
-	return &Engine{}
+	e := &Engine{}
+	// Default to the CF-fronted topology. SetTrustedProxies only fails on
+	// malformed CIDR strings; cloudflareCIDRs is a vetted constant, so this
+	// cannot error in practice — ignore the return to keep New() signatureless.
+	_ = e.TrustCloudflare()
+	return e
 }
 
 // Default is an alias for New, preserved for drop-in Gin compatibility.

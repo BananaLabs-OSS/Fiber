@@ -46,7 +46,8 @@ type Context struct {
 	// trustedProxies is the engine's configured trusted-proxy CIDR set,
 	// copied in at dispatch. ClientIP() honors forwarded headers only
 	// when the immediate peer (RemoteAddr) is within this set; nil means
-	// trust nothing. See Engine.SetTrustedProxies.
+	// trust nothing. It defaults to Cloudflare's edge ranges because cells
+	// are deployed behind Cloudflare. See Engine.SetTrustedProxies.
 	trustedProxies []*net.IPNet
 }
 
@@ -188,15 +189,21 @@ func (c *Context) GetHeader(key string) string {
 // (host-observed RemoteAddr) is within the engine's configured
 // trusted-proxy set (see Engine.SetTrustedProxies / Engine.TrustCloudflare).
 //
-//   - Default (no trusted proxies configured): forwarded headers are
-//     ignored entirely and ClientIP() returns the real peer RemoteAddr.
-//     This is the safe default — a client talking to the cell origin
-//     directly cannot forge its IP.
-//   - Behind Cloudflare (TrustCloudflare): when RemoteAddr is a Cloudflare
-//     edge, CF-Connecting-IP is honored as the authoritative client IP;
-//     the raw X-Forwarded-For first hop and True-Client-IP are NOT trusted
-//     ahead of it, since on a CF-fronted origin only CF-Connecting-IP is
-//     set by the edge.
+//   - Default (New(): trust Cloudflare): every cell on this platform is
+//     fronted by Cloudflare, so New() defaults the trusted set to CF's
+//     edge ranges. When RemoteAddr is a Cloudflare edge, CF-Connecting-IP
+//     is honored as the authoritative client IP — so in production
+//     ClientIP() returns the real client IP, not the CF edge. A peer
+//     OUTSIDE the CF ranges (a direct / non-CF caller) is not trusted, so
+//     its forwarded headers are ignored and ClientIP() returns the raw
+//     peer — a client talking to a cell directly cannot forge its IP.
+//     The raw X-Forwarded-For first hop and True-Client-IP are NOT trusted
+//     ahead of CF-Connecting-IP, since on a CF-fronted origin only
+//     CF-Connecting-IP is set by the edge.
+//   - Non-CF deployment (SetTrustedProxies(nil) to trust nothing, or a
+//     custom ingress CIDR): forwarded headers are ignored entirely / only
+//     honored from the configured ingress, and ClientIP() returns the real
+//     peer RemoteAddr for any untrusted peer.
 //
 // Use this for per-IP rate limits, blocklists, geo-gating, and audit
 // fields — it is only as trustworthy as the trusted-proxy configuration.
