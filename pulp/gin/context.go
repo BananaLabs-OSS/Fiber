@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -41,6 +42,12 @@ type Context struct {
 	// keys is Gin's per-request scratch space, populated by middleware
 	// (e.g. JWTAuth writes "account_id" here) and read by handlers.
 	keys map[string]any
+
+	// trustedProxies is the engine's configured trusted-proxy CIDR set,
+	// copied in at dispatch. ClientIP() honors forwarded headers only
+	// when the immediate peer (RemoteAddr) is within this set; nil means
+	// trust nothing. See Engine.SetTrustedProxies.
+	trustedProxies []*net.IPNet
 }
 
 // Next advances through the middleware/handler chain. Middleware call
@@ -172,16 +179,43 @@ func (c *Context) GetHeader(key string) string {
 	return ""
 }
 
-// ClientIP returns the client's IP address. Mirrors gin.Context.ClientIP:
-// checks proxy headers in precedence order (CF-Connecting-IP, True-Client-IP,
-// X-Forwarded-For first hop, X-Real-Ip, RFC 7239 Forwarded), then falls
-// back to the host-populated RemoteAddr with the port stripped. Returns
-// empty string only when no address is available at all.
+// ClientIP returns the client's IP address.
+//
+// SECURITY: forwarded proxy headers (CF-Connecting-IP, X-Forwarded-For,
+// X-Real-Ip, RFC 7239 Forwarded) are client-controllable and trivially
+// spoofable — any caller can set CF-Connecting-IP: 1.2.3.4. ClientIP()
+// therefore trusts those headers ONLY when the immediate peer
+// (host-observed RemoteAddr) is within the engine's configured
+// trusted-proxy set (see Engine.SetTrustedProxies / Engine.TrustCloudflare).
+//
+//   - Default (no trusted proxies configured): forwarded headers are
+//     ignored entirely and ClientIP() returns the real peer RemoteAddr.
+//     This is the safe default — a client talking to the cell origin
+//     directly cannot forge its IP.
+//   - Behind Cloudflare (TrustCloudflare): when RemoteAddr is a Cloudflare
+//     edge, CF-Connecting-IP is honored as the authoritative client IP;
+//     the raw X-Forwarded-For first hop and True-Client-IP are NOT trusted
+//     ahead of it, since on a CF-fronted origin only CF-Connecting-IP is
+//     set by the edge.
+//
+// Use this for per-IP rate limits, blocklists, geo-gating, and audit
+// fields — it is only as trustworthy as the trusted-proxy configuration.
+// Returns empty string only when no address is available at all.
 func (c *Context) ClientIP() string {
-	if ip := c.GetHeader("CF-Connecting-IP"); ip != "" {
-		return strings.TrimSpace(ip)
+	peer := stripPort(c.req.RemoteAddr)
+
+	// Only consult forwarded headers when the immediate peer is a trusted
+	// proxy. Otherwise the headers are attacker-supplied; return the peer.
+	if !c.peerIsTrusted(peer) {
+		return peer
 	}
-	if ip := c.GetHeader("True-Client-IP"); ip != "" {
+
+	// Trusted edge. Prefer Cloudflare's authoritative header, then the
+	// conventional proxy headers (leftmost X-Forwarded-For hop, X-Real-Ip,
+	// RFC 7239 Forwarded). True-Client-IP is deliberately not honored: it
+	// is an Enterprise-only CF feature that mirrors CF-Connecting-IP, and
+	// trusting it ahead of CF-Connecting-IP just widens the spoof surface.
+	if ip := c.GetHeader("CF-Connecting-IP"); ip != "" {
 		return strings.TrimSpace(ip)
 	}
 	if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
@@ -208,10 +242,32 @@ func (c *Context) ClientIP() string {
 			}
 		}
 	}
-	// Fall back to the host-observed peer address. RemoteAddr is "host:port"
-	// (or "[host]:port" for IPv6); strip the port to match what proxy
-	// headers would carry.
-	addr := c.req.RemoteAddr
+	// Trusted peer but no forwarded header present — return the peer.
+	return peer
+}
+
+// peerIsTrusted reports whether the immediate-peer IP is within the
+// engine's configured trusted-proxy set. A nil/empty set trusts nothing.
+func (c *Context) peerIsTrusted(peer string) bool {
+	if len(c.trustedProxies) == 0 || peer == "" {
+		return false
+	}
+	ip := net.ParseIP(peer)
+	if ip == nil {
+		return false
+	}
+	for _, n := range c.trustedProxies {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// stripPort returns the host portion of a "host:port" RemoteAddr,
+// handling IPv6 bracketed form ("[::1]:1234"). Returns "" for empty
+// input. A bare IP with no port is returned unchanged.
+func stripPort(addr string) string {
 	if addr == "" {
 		return ""
 	}
@@ -222,8 +278,9 @@ func (c *Context) ClientIP() string {
 		}
 	}
 	if idx := strings.LastIndexByte(addr, ':'); idx != -1 {
-		// Only strip if it looks like a port (no other colons, or IPv6 with port)
-		// For plain IPv4 "a.b.c.d:port" the last colon is the port separator.
+		// For plain IPv4 "a.b.c.d:port" the last colon is the port
+		// separator. A bare IPv6 literal (multiple colons, no brackets)
+		// has no port, so leave it untouched.
 		if !strings.Contains(addr[:idx], ":") {
 			return addr[:idx]
 		}

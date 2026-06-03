@@ -23,6 +23,7 @@ package gin
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"sort"
 	"strings"
 
@@ -46,6 +47,101 @@ type Engine struct {
 	routes     []route
 	wsRoutes   []wsRoute
 	middleware []HandlerFunc
+
+	// trustedProxies is the set of CIDRs whose forwarded headers
+	// (CF-Connecting-IP / X-Forwarded-For / …) ClientIP() is allowed to
+	// trust. It is consulted against the host-observed RemoteAddr (the
+	// real immediate peer). Default: nil → trust NOTHING, so ClientIP()
+	// returns RemoteAddr verbatim and forwarded headers are ignored.
+	// This is the secure default: a client that talks to the cell origin
+	// directly cannot spoof its IP via a header. Set it (SetTrustedProxies
+	// / TrustCloudflare) only for the edge the deployment actually sits
+	// behind. See Context.ClientIP.
+	trustedProxies []*net.IPNet
+}
+
+// cloudflareCIDRs is Cloudflare's published list of edge ranges
+// (https://www.cloudflare.com/ips/). When a Sessions/Evolution cell is
+// fronted by Cloudflare, these are the only peers whose CF-Connecting-IP
+// header may be trusted. Passed to SetTrustedProxies by TrustCloudflare.
+var cloudflareCIDRs = []string{
+	// IPv4
+	"173.245.48.0/20",
+	"103.21.244.0/22",
+	"103.22.200.0/22",
+	"103.31.4.0/22",
+	"141.101.64.0/18",
+	"108.162.192.0/18",
+	"190.93.240.0/20",
+	"188.114.96.0/20",
+	"197.234.240.0/22",
+	"198.41.128.0/17",
+	"162.158.0.0/15",
+	"104.16.0.0/13",
+	"104.24.0.0/14",
+	"172.64.0.0/13",
+	"131.0.72.0/22",
+	// IPv6
+	"2400:cb00::/32",
+	"2606:4700::/32",
+	"2803:f800::/32",
+	"2405:b500::/32",
+	"2405:8100::/32",
+	"2a06:98c0::/29",
+	"2c0f:f248::/32",
+}
+
+// SetTrustedProxies configures which immediate-peer CIDRs are allowed to
+// supply forwarded client-IP headers, mirroring gin's
+// Engine.SetTrustedProxies. Each entry is a CIDR ("10.0.0.0/8") or a bare
+// IP ("203.0.113.7", treated as a /32 or /128). Forwarded headers are
+// honored by ClientIP() ONLY when the host-observed RemoteAddr falls
+// within one of these ranges; otherwise RemoteAddr is returned verbatim.
+//
+// Passing nil/empty clears the set → trust nothing (the secure default).
+// Invalid entries are rejected with an error and leave the existing set
+// unchanged.
+func (e *Engine) SetTrustedProxies(cidrs []string) error {
+	if len(cidrs) == 0 {
+		e.trustedProxies = nil
+		return nil
+	}
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, c := range cidrs {
+		c = strings.TrimSpace(c)
+		if c == "" {
+			continue
+		}
+		if !strings.Contains(c, "/") {
+			// Bare IP → host route (/32 or /128).
+			ip := net.ParseIP(c)
+			if ip == nil {
+				return fmt.Errorf("trusted proxy %q is not a valid IP or CIDR", c)
+			}
+			bits := 32
+			if ip.To4() == nil {
+				bits = 128
+			}
+			c = fmt.Sprintf("%s/%d", c, bits)
+		}
+		_, ipnet, err := net.ParseCIDR(c)
+		if err != nil {
+			return fmt.Errorf("trusted proxy %q: %w", c, err)
+		}
+		nets = append(nets, ipnet)
+	}
+	e.trustedProxies = nets
+	return nil
+}
+
+// TrustCloudflare configures the engine to trust Cloudflare's published
+// edge ranges as proxies, so ClientIP() honors the CF-Connecting-IP header
+// only when the request actually arrived from a Cloudflare edge. Use this
+// on the production deployment, which sits behind Cloudflare. Equivalent
+// to SetTrustedProxies(cloudflare ranges); the ranges are baked in so
+// callers do not re-paste them per cell.
+func (e *Engine) TrustCloudflare() error {
+	return e.SetTrustedProxies(cloudflareCIDRs)
 }
 
 // RouterGroup is a scope attached to a shared prefix + middleware
@@ -289,7 +385,7 @@ func (e *Engine) dispatch(ev pulp.StepEvent) error {
 		if !matchPattern(r.pattern, req.Path) {
 			continue
 		}
-		c := &Context{req: req, handlers: r.handlers}
+		c := &Context{req: req, handlers: r.handlers, trustedProxies: e.trustedProxies}
 		c.populateParams(r.pattern, req.Path)
 		c.Next()
 		if !c.responded {
@@ -313,7 +409,7 @@ func (e *Engine) dispatch(ev pulp.StepEvent) error {
 			if !matchPattern(r.pattern, req.Path) {
 				continue
 			}
-			c := &Context{req: req, handlers: r.handlers}
+			c := &Context{req: req, handlers: r.handlers, trustedProxies: e.trustedProxies}
 			c.populateParams(r.pattern, req.Path)
 			c.Next()
 			if !c.responded {
