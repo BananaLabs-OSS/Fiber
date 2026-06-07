@@ -28,6 +28,7 @@ type ShutdownFunc func() error
 var (
 	userInit     InitFunc
 	userStep     StepFunc
+	userTick     TickFunc
 	userShutdown ShutdownFunc
 )
 
@@ -38,6 +39,16 @@ func OnInit(fn InitFunc) { userInit = fn }
 
 // OnStep registers the function invoked for each non-tick pulp_step.
 func OnStep(fn StepFunc) { userStep = fn }
+
+// TickFunc is invoked on every idle pulp_step (no event), carrying the host
+// wall-clock in nanoseconds. This is how a cell runs autonomous, server-side
+// periodic work — e.g. firing a timer's deadline with no client connected. It
+// runs in the same single-threaded step loop as HTTP/SSE dispatch, so it must
+// be fast.
+type TickFunc func(wallTimeNanos uint64) error
+
+// OnTick registers the function invoked on each idle (no-event) pulp_step.
+func OnTick(fn TickFunc) { userTick = fn }
 
 // OnShutdown registers the function invoked for pulp_shutdown.
 func OnShutdown(fn ShutdownFunc) { userShutdown = fn }
@@ -114,8 +125,14 @@ func pulpStep(inputPtr, inputLen uint32) int32 {
 		return 1
 	}
 	if payloadLen == 0 {
-		// Tick — no event. Stay silent, give idle callbacks in a
-		// future release if anyone needs them.
+		// Idle tick — no event. Drive the cell's autonomous periodic work
+		// (server-side timers/deadlines) if a handler is registered.
+		if userTick != nil {
+			if err := userTick(wallTime); err != nil {
+				fmt.Printf("[pulp] tick error: %v\n", err)
+				return 1
+			}
+		}
 		return 0
 	}
 
