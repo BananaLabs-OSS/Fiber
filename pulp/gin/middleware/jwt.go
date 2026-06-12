@@ -41,6 +41,9 @@ type JWTConfig struct {
 // stashes the parsed account_id and session_id in the request context.
 // Handlers read them via c.GetString("account_id") / .GetString("session_id").
 func JWTAuth(cfg JWTConfig) pulpgin.HandlerFunc {
+	if len(cfg.Secret) == 0 {
+		panic("middleware.JWTAuth: secret must not be empty — set JWT_SECRET before deploying")
+	}
 	return func(c *pulpgin.Context) {
 		claims, err := extractAndValidate(c.GetHeader("Authorization"), cfg.Secret)
 		if err != nil {

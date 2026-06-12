@@ -278,7 +278,7 @@ func codeToError(op string, code uint32) error {
 	case 10:
 		return fmt.Errorf("%s: udp manager not initialized", op)
 	case 99:
-		return fmt.Errorf("%s: capability network.udp not declared in manifest", op)
+		return fmt.Errorf("%s: %w", op, pulp.ErrCapabilityUnavailable)
 	default:
 		return fmt.Errorf("%s: host code %d", op, code)
 	}

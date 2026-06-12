@@ -30,6 +30,9 @@ func (wsAPI) Register(path string) error {
 	p := []byte(path)
 	code := hostWSRegister(uint32(uintptr(unsafe.Pointer(&p[0]))), uint32(len(p)))
 	runtime.KeepAlive(p)
+	if code == 99 {
+		return fmt.Errorf("ws_register: %w", ErrCapabilityUnavailable)
+	}
 	if code != 0 {
 		return fmt.Errorf("ws_register host code %d", code)
 	}
@@ -44,6 +47,9 @@ func (wsAPI) Send(req WSSendRequest) error {
 	}
 	code := hostWSSend(uint32(uintptr(unsafe.Pointer(&data[0]))), uint32(len(data)))
 	runtime.KeepAlive(data)
+	if code == 99 {
+		return fmt.Errorf("ws_send: %w", ErrCapabilityUnavailable)
+	}
 	if code != 0 {
 		return fmt.Errorf("ws_send host code %d", code)
 	}
@@ -59,6 +65,9 @@ func (wsAPI) Close(req WSCloseRequest) error {
 	}
 	code := hostWSClose(uint32(uintptr(unsafe.Pointer(&data[0]))), uint32(len(data)))
 	runtime.KeepAlive(data)
+	if code == 99 {
+		return fmt.Errorf("ws_close: %w", ErrCapabilityUnavailable)
+	}
 	if code != 0 {
 		return fmt.Errorf("ws_close host code %d", code)
 	}
