@@ -316,8 +316,11 @@ func putMultipartInit(key, contentType string) (string, error) {
 		return "", fmt.Errorf("s3_put_multipart_init: empty response")
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp multipartInitResponse
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return "", fmt.Errorf("decode multipart_init: %w", err)
 	}
 	return resp.UploadID, nil
@@ -349,8 +352,11 @@ func putMultipartPart(key, uploadID string, partNumber int32, chunk []byte) (str
 		return "", fmt.Errorf("s3_put_multipart_part: empty response")
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp multipartPartResponse
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return "", fmt.Errorf("decode multipart_part: %w", err)
 	}
 	return resp.ETag, nil
@@ -411,8 +417,11 @@ func Presign(key string, ttl time.Duration) (string, error) {
 		return "", fmt.Errorf("s3_presign: empty response")
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp presignResponse
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return "", fmt.Errorf("decode presign: %w", err)
 	}
 	return resp.URL, nil
@@ -442,8 +451,11 @@ func PresignPut(key string, ttl time.Duration) (string, error) {
 		return "", fmt.Errorf("s3_presign_put: empty response")
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp presignResponse
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return "", fmt.Errorf("decode presign_put: %w", err)
 	}
 	return resp.URL, nil
@@ -471,8 +483,11 @@ func Head(key string) (HeadResult, error) {
 		return HeadResult{}, nil
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp HeadResult
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return HeadResult{}, fmt.Errorf("decode head: %w", err)
 	}
 	return resp, nil
@@ -504,8 +519,11 @@ func GetObject(key string) (GetObjectResponse, error) {
 		return GetObjectResponse{}, nil
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp GetObjectResponse
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return GetObjectResponse{}, fmt.Errorf("decode get: %w", err)
 	}
 	return resp, nil
@@ -566,8 +584,11 @@ func List(prefix, continuationToken string, maxKeys int32) (ListPage, error) {
 		return ListPage{}, nil
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp listResponse
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return ListPage{}, fmt.Errorf("decode list: %w", err)
 	}
 	return ListPage{

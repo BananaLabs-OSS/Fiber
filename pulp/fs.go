@@ -78,6 +78,7 @@ func (fsAPI) Read(path string) ([]byte, error) {
 	src := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(dataPtr))), dataLen)
 	out := make([]byte, dataLen)
 	copy(out, src)
+	releaseHostAlloc(dataPtr, dataLen)
 	return out, nil
 }
 
@@ -192,6 +193,14 @@ func releaseHostAlloc(ptr, size uint32) {
 	pulpFree(ptr, size)
 }
 
+// ReleaseHostAlloc is the exported equivalent of releaseHostAlloc for
+// use by sub-packages (entropy, s3, docker, stripe, …) that receive
+// host-allocated buffers via respPtrOut/respLenOut parameters and must
+// free them immediately after copying the bytes into a GC-owned slice.
+func ReleaseHostAlloc(ptr, size uint32) {
+	pulpFree(ptr, size)
+}
+
 // Delete removes the file at path. Returns ErrNotFound if the file
 // is missing.
 func (fsAPI) Delete(path string) error {
@@ -244,8 +253,11 @@ func (fsAPI) Stat(path string) (FileInfo, error) {
 		return FileInfo{}, nil
 	}
 	src := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(dataPtr))), dataLen)
+	buf := make([]byte, dataLen)
+	copy(buf, src)
+	releaseHostAlloc(dataPtr, dataLen)
 	var info FileInfo
-	if err := msgpack.Unmarshal(src, &info); err != nil {
+	if err := msgpack.Unmarshal(buf, &info); err != nil {
 		return FileInfo{}, fmt.Errorf("decode fs_stat: %w", err)
 	}
 	return info, nil
@@ -398,10 +410,13 @@ func fsTempCall(dir, pattern string, host func(uint32, uint32, uint32, uint32) u
 		return "", nil
 	}
 	src := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(dataPtr))), dataLen)
+	buf := make([]byte, dataLen)
+	copy(buf, src)
+	releaseHostAlloc(dataPtr, dataLen)
 	var resp struct {
 		Path string `msgpack:"path"`
 	}
-	if err := msgpack.Unmarshal(src, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return "", fmt.Errorf("decode %s: %w", name, err)
 	}
 	return resp.Path, nil

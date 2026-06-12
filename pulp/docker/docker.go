@@ -217,6 +217,7 @@ func List(filter map[string]string) ([]Server, error) {
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
 	out := make([]byte, len(respBytes))
 	copy(out, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var servers []Server
 	if err := msgpack.Unmarshal(out, &servers); err != nil {
 		return nil, fmt.Errorf("decode list: %w", err)
@@ -244,8 +245,11 @@ func Get(name string) (*Server, error) {
 		return nil, pulp.ErrNotFound
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var server Server
-	if err := msgpack.Unmarshal(respBytes, &server); err != nil {
+	if err := msgpack.Unmarshal(buf, &server); err != nil {
 		return nil, fmt.Errorf("decode get: %w", err)
 	}
 	return &server, nil
@@ -271,8 +275,11 @@ func Create(req CreateRequest) (*Server, error) {
 		return nil, fmt.Errorf("docker_create: empty response")
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var server Server
-	if err := msgpack.Unmarshal(respBytes, &server); err != nil {
+	if err := msgpack.Unmarshal(buf, &server); err != nil {
 		return nil, fmt.Errorf("decode create: %w", err)
 	}
 	return &server, nil
@@ -318,8 +325,11 @@ func Exec(id string, cmd []string) (string, error) {
 		return "", nil
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp execResponse
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return "", fmt.Errorf("decode exec: %w", err)
 	}
 	return resp.Output, nil
@@ -345,8 +355,11 @@ func Logs(id string, tail int) (string, error) {
 		return "", nil
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp logsResponse
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return "", fmt.Errorf("decode logs: %w", err)
 	}
 	return resp.Logs, nil
@@ -372,8 +385,11 @@ func Stats(id string) (*ContainerStats, error) {
 		return nil, nil
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var stats ContainerStats
-	if err := msgpack.Unmarshal(respBytes, &stats); err != nil {
+	if err := msgpack.Unmarshal(buf, &stats); err != nil {
 		return nil, fmt.Errorf("decode stats: %w", err)
 	}
 	return &stats, nil
@@ -401,6 +417,7 @@ func FilesRead(id, path string) ([]byte, error) {
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
 	out := make([]byte, len(respBytes))
 	copy(out, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	return out, nil
 }
 
@@ -444,8 +461,11 @@ func EventsPoll(sinceNanos int64, limit int) ([]Event, error) {
 		return nil, nil
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var events []Event
-	if err := msgpack.Unmarshal(respBytes, &events); err != nil {
+	if err := msgpack.Unmarshal(buf, &events); err != nil {
 		return nil, fmt.Errorf("decode events_poll: %w", err)
 	}
 	return events, nil
@@ -469,8 +489,11 @@ func StatsAll() ([]ContainerStats, error) {
 		return nil, nil
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var stats []ContainerStats
-	if err := msgpack.Unmarshal(respBytes, &stats); err != nil {
+	if err := msgpack.Unmarshal(buf, &stats); err != nil {
 		return nil, fmt.Errorf("decode stats_all: %w", err)
 	}
 	return stats, nil
@@ -503,8 +526,11 @@ func GetBuildStatus() (*BuildStatus, error) {
 		return &BuildStatus{}, nil
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var status BuildStatus
-	if err := msgpack.Unmarshal(respBytes, &status); err != nil {
+	if err := msgpack.Unmarshal(buf, &status); err != nil {
 		return nil, fmt.Errorf("decode build_status: %w", err)
 	}
 	return &status, nil

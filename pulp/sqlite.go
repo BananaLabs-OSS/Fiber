@@ -97,7 +97,10 @@ func (sqliteAPI) Exec(query string, args ...any) (ExecResult, error) {
 	var result ExecResult
 	if resLen > 0 {
 		resBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(resPtr))), resLen)
-		if err := msgpack.Unmarshal(resBytes, &result); err != nil {
+		buf := make([]byte, resLen)
+		copy(buf, resBytes)
+		releaseHostAlloc(resPtr, resLen)
+		if err := msgpack.Unmarshal(buf, &result); err != nil {
 			return ExecResult{}, fmt.Errorf("decode exec result: %w", err)
 		}
 	}
@@ -149,7 +152,10 @@ func (sqliteAPI) Query(query string, args ...any) (QueryResult, error) {
 	var result QueryResult
 	if rowsLen > 0 {
 		rowBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(rowsPtr))), rowsLen)
-		if err := msgpack.Unmarshal(rowBytes, &result); err != nil {
+		buf := make([]byte, rowsLen)
+		copy(buf, rowBytes)
+		releaseHostAlloc(rowsPtr, rowsLen)
+		if err := msgpack.Unmarshal(buf, &result); err != nil {
 			return QueryResult{}, fmt.Errorf("decode query result: %w", err)
 		}
 	}

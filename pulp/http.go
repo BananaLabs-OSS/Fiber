@@ -126,8 +126,11 @@ func (httpAPI) Fetch(req HTTPFetchRequest) (HTTPResponse, error) {
 		return HTTPResponse{}, fmt.Errorf("http_fetch returned empty body")
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	releaseHostAlloc(respPtr, respLen)
 	var resp HTTPResponse
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return HTTPResponse{}, fmt.Errorf("decode fetch resp: %w", err)
 	}
 	return resp, nil
@@ -185,12 +188,15 @@ func (httpAPI) FetchStreamWith(req HTTPFetchRequest, opts FetchStreamOptions) (*
 		return nil, errors.New("http_fetch_begin returned empty header")
 	}
 	hdrBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(hdrPtr))), hdrLen)
+	hdrBuf := make([]byte, hdrLen)
+	copy(hdrBuf, hdrBytes)
+	releaseHostAlloc(hdrPtr, hdrLen)
 	var hdr struct {
 		ID      uint64            `msgpack:"id"`
 		Status  uint32            `msgpack:"status"`
 		Headers map[string]string `msgpack:"headers"`
 	}
-	if err := msgpack.Unmarshal(hdrBytes, &hdr); err != nil {
+	if err := msgpack.Unmarshal(hdrBuf, &hdr); err != nil {
 		return nil, fmt.Errorf("decode stream header: %w", err)
 	}
 	chunk := opts.ChunkSize
@@ -271,12 +277,15 @@ func (s *StreamResponse) pullChunk() error {
 		return nil
 	}
 	chunkBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(chunkPtr))), chunkLen)
+	chunkBuf := make([]byte, chunkLen)
+	copy(chunkBuf, chunkBytes)
+	releaseHostAlloc(chunkPtr, chunkLen)
 	var c struct {
 		Bytes []byte `msgpack:"bytes"`
 		EOF   bool   `msgpack:"eof"`
 		Err   string `msgpack:"err,omitempty"`
 	}
-	if err := msgpack.Unmarshal(chunkBytes, &c); err != nil {
+	if err := msgpack.Unmarshal(chunkBuf, &c); err != nil {
 		return fmt.Errorf("decode chunk: %w", err)
 	}
 	if len(c.Bytes) > 0 {

@@ -81,8 +81,11 @@ func Read(n uint32) ([]byte, error) {
 		return nil, fmt.Errorf("entropy.Read: empty response")
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp readResponse
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return nil, fmt.Errorf("entropy.Read: unmarshal response: %w", err)
 	}
 	if uint32(len(resp.Bytes)) != n {
