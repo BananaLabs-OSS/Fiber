@@ -38,6 +38,9 @@ func hostHTTPFetchRead(streamIDLo, streamIDHi, maxBytes, chunkPtrOut, chunkLenOu
 //go:wasmimport pulp http_fetch_close
 func hostHTTPFetchClose(streamIDLo, streamIDHi uint32) uint32
 
+//go:wasmimport pulp http_respond_stream
+func hostHTTPRespondStream(ptr, ln uint32) uint32
+
 // Listen declares the bind address this cell's HTTP routes register
 // against. Call once at cell init, before Register. Multiple cells
 // calling Listen with the same addr share a listener (routes keyed by
@@ -94,6 +97,41 @@ func (httpAPI) Respond(resp HTTPResponse) error {
 	runtime.KeepAlive(data)
 	if code != 0 {
 		return fmt.Errorf("http_respond host code %d", code)
+	}
+	return nil
+}
+
+// HTTPRespondStream answers an inbound request by SPLICING an open fetch
+// stream (from FetchStream) straight to the client — no buffering in the cell.
+// The host takes ownership of StreamID: after RespondStream the cell must NOT
+// Read or Close that StreamResponse. Use for SSE / chunked / long-lived
+// upstream responses, which the one-shot Respond + 30s inbound timeout cannot
+// carry. Status/Headers/Cookies are written to the client before the body.
+type HTTPRespondStream struct {
+	ID       uint64            `msgpack:"id"`
+	StreamID uint64            `msgpack:"stream_id"`
+	Status   uint32            `msgpack:"status"`
+	Headers  map[string]string `msgpack:"headers"`
+	Cookies  []string          `msgpack:"cookies,omitempty"`
+}
+
+// RespondStream hands the host a streaming-response directive: it splices the
+// already-open fetch StreamID to the waiting client and copies the body with
+// per-chunk flush, exempt from the inbound timeout. Returns before the body
+// finishes (the host streams in its own goroutine). The cell must not touch
+// the spliced stream afterward.
+func (httpAPI) RespondStream(meta HTTPRespondStream) error {
+	data, err := msgpack.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("encode respond-stream: %w", err)
+	}
+	code := hostHTTPRespondStream(uint32(uintptr(unsafe.Pointer(&data[0]))), uint32(len(data)))
+	runtime.KeepAlive(data)
+	if code == 99 {
+		return ErrCapabilityUnavailable
+	}
+	if code != 0 {
+		return fmt.Errorf("http_respond_stream host code %d", code)
 	}
 	return nil
 }

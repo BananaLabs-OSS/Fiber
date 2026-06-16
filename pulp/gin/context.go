@@ -491,6 +491,15 @@ func (c *Context) SetCookie(name, value string, maxAge int, path, domain string,
 	c.cookies = append(c.cookies, cookie)
 }
 
+// AddSetCookie emits a raw, already-formatted Set-Cookie header value as-is. Used by
+// PROXIES (the relay / port-forward) to pass an upstream app's cookies through
+// verbatim — including several in one response — without re-parsing them.
+func (c *Context) AddSetCookie(raw string) {
+	if raw != "" {
+		c.cookies = append(c.cookies, raw)
+	}
+}
+
 // SetSameSite sets the SameSite attribute applied to the next SetCookie
 // call. Matches Gin's SetSameSite — it affects only the immediately
 // following SetCookie; a SetCookie without a prior SetSameSite emits
@@ -531,8 +540,14 @@ func (c *Context) populateParams(pattern, path string) {
 	pathParts := strings.Split(strings.TrimPrefix(path, "/"), "/")
 	c.params = map[string]string{}
 	for i, p := range patternParts {
+		if strings.HasPrefix(p, "*") { // catch-all: capture the remainder of the path
+			c.params[strings.TrimPrefix(p, "*")] = strings.Join(pathParts[i:], "/")
+			break
+		}
 		if strings.HasPrefix(p, ":") {
-			c.params[strings.TrimPrefix(p, ":")] = pathParts[i]
+			if i < len(pathParts) {
+				c.params[strings.TrimPrefix(p, ":")] = pathParts[i]
+			}
 		}
 	}
 }
@@ -683,6 +698,30 @@ func (c *Context) File(filepath_ string) {
 // from a stock Gin service.
 func (c *Context) FileFromFS(filepath_ string, fs http.FileSystem) {
 	c.String(500, "FileFromFS not supported in WASM cells")
+}
+
+// StreamFrom answers this request by splicing an already-open outbound fetch
+// stream (streamID from pulp.HTTP.FetchStream) straight to the client — the
+// host copies the body with per-chunk flush, exempt from the inbound timeout.
+// Use for SSE / chunked / long-lived proxied responses. After this call the
+// cell must NOT Read/Close that stream (the host owns it), and the handler
+// should return immediately — marking the context responded so the engine
+// does not also send a buffered response.
+func (c *Context) StreamFrom(streamID uint64, status int, headers map[string]string, cookies []string) error {
+	if c.responded {
+		return nil
+	}
+	err := pulp.HTTP.RespondStream(pulp.HTTPRespondStream{
+		ID:       c.req.ID,
+		StreamID: streamID,
+		Status:   uint32(status),
+		Headers:  headers,
+		Cookies:  cookies,
+	})
+	if err == nil {
+		c.responded = true // host owns the response now; engine must not also flush
+	}
+	return err
 }
 
 // flush hands the accumulated response to the host. Safe to call

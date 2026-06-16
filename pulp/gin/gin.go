@@ -463,10 +463,16 @@ func (e *Engine) dispatch(ev pulp.StepEvent) error {
 func matchPattern(pattern, path string) bool {
 	patternParts := strings.Split(strings.TrimPrefix(pattern, "/"), "/")
 	pathParts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(patternParts) != len(pathParts) {
-		return false
-	}
 	for i, p := range patternParts {
+		// Trailing "*name" is a catch-all: it matches the remainder of the path
+		// (including empty), so the pattern may be shorter than the path. Used by
+		// the remote-machine proxy (/api/m/:id/*sub). Gin-compatible.
+		if strings.HasPrefix(p, "*") {
+			return true
+		}
+		if i >= len(pathParts) {
+			return false
+		}
 		if strings.HasPrefix(p, ":") {
 			continue
 		}
@@ -474,7 +480,7 @@ func matchPattern(pattern, path string) bool {
 			return false
 		}
 	}
-	return true
+	return len(patternParts) == len(pathParts)
 }
 
 // JSON-encoded literal shortcuts used for HandlerFunc.BindJSON. Alias

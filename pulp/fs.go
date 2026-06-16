@@ -145,10 +145,17 @@ type FileInfo struct {
 // ErrNotFound when the directory does not exist.
 func (fsAPI) List(path string) ([]FileEntry, error) {
 	pathBytes := []byte(path)
+	// An empty path means "list the scope root" — a legit call. Guard the
+	// pointer so &pathBytes[0] doesn't panic (index out of range) on the empty
+	// slice; the host treats len 0 as the root.
+	var pathPtr uint32
+	if len(pathBytes) > 0 {
+		pathPtr = uint32(uintptr(unsafe.Pointer(&pathBytes[0])))
+	}
 	dataPtr := new(uint32)
 	dataLen := new(uint32)
 	code := hostFSList(
-		uint32(uintptr(unsafe.Pointer(&pathBytes[0]))),
+		pathPtr,
 		uint32(len(pathBytes)),
 		uint32(uintptr(unsafe.Pointer(dataPtr))),
 		uint32(uintptr(unsafe.Pointer(dataLen))),

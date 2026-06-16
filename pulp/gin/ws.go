@@ -182,8 +182,13 @@ func (e *Engine) dispatchWS(ev pulp.StepEvent) error {
 }
 
 func (e *Engine) findWSRoute(path string) *wsRoute {
-	for i := range e.wsRoutes {
+	for i := range e.wsRoutes { // exact first
 		if e.wsRoutes[i].path == path {
+			return &e.wsRoutes[i]
+		}
+	}
+	for i := range e.wsRoutes { // then pattern (:param / *catchall, e.g. relay)
+		if matchPattern(e.wsRoutes[i].path, path) {
 			return &e.wsRoutes[i]
 		}
 	}
