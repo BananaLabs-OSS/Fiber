@@ -37,14 +37,18 @@ func hostPTYResize(id, cols, rows uint32) uint32
 //go:wasmimport pulp pty_close
 func hostPTYClose(id uint32) uint32
 
+//go:wasmimport pulp pty_alive
+func hostPTYAlive(id uint32) uint32
+
 // PTYOpenRequest selects what a host PTY runs. Shell picks a known program
 // ("cmd"/"powershell"/"pwsh"/bash/sh, "" = OS default, or "agent" = the Claude
 // Code CLI). Args are appended to the resolved command line (e.g. the agent's
 // --settings). Dir is the working directory the program starts in.
 type PTYOpenRequest struct {
-	Shell string   `msgpack:"shell"`
-	Args  []string `msgpack:"args,omitempty"`
-	Dir   string   `msgpack:"dir,omitempty"`
+	Shell   string   `msgpack:"shell"`
+	Args    []string `msgpack:"args,omitempty"`
+	Dir     string   `msgpack:"dir,omitempty"`
+	Persist bool     `msgpack:"persist,omitempty"` // keep the process alive across a cell ↻ reload (agent/named panes)
 }
 
 // Open starts a host PTY running the given shell ("cmd"/"powershell"/"pwsh" on
@@ -116,6 +120,13 @@ func (ptyAPI) Close(id uint32) error {
 		return fmt.Errorf("pty_close host code %d", code)
 	}
 	return nil
+}
+
+// Alive reports whether a PTY id still has a running process. False after the
+// shell/agent exited, after pty_close, or after a host restart wiped all sessions.
+// Lets the cell tell a reattach (process survived a cell reload) from a respawn.
+func (ptyAPI) Alive(id uint32) bool {
+	return hostPTYAlive(id) == 1
 }
 
 // DecodePTYOutput decodes a "pty.output" step event payload.
