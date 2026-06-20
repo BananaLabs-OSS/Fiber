@@ -4,4 +4,5 @@ Thumbs.db
 
 # IDE (root level)
 .idea/
-*.iml
+*.iml.projx/
+audit/
