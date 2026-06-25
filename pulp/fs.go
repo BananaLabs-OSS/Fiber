@@ -165,8 +165,6 @@ func (fsAPI) List(path string) ([]FileEntry, error) {
 	runtime.KeepAlive(dataLen)
 	dPtr := *dataPtr
 	dLen := *dataLen
-	dataLen2 := dLen
-	_ = dataLen2
 	switch code {
 	case 0:
 		// ok
