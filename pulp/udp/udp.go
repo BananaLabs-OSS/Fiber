@@ -143,8 +143,11 @@ func Listen(addr string, bufferSize int) (*Socket, error) {
 		return nil, fmt.Errorf("udp_listen: empty response")
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	listenBuf := make([]byte, respLen)
+	copy(listenBuf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp udpListenResponse
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(listenBuf, &resp); err != nil {
 		return nil, fmt.Errorf("decode listen: %w", err)
 	}
 	sock := &Socket{id: resp.SocketID, addr: addr}
@@ -180,8 +183,11 @@ func (s *Socket) Send(dst string, payload []byte) (int, error) {
 		return 0, nil
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	sendBuf := make([]byte, respLen)
+	copy(sendBuf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp udpSendResponse
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(sendBuf, &resp); err != nil {
 		return 0, fmt.Errorf("decode send: %w", err)
 	}
 	return resp.BytesSent, nil

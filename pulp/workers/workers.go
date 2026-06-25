@@ -163,6 +163,9 @@ func Result(taskID uint32) (TaskResult, bool, error) {
 			return TaskResult{}, true, nil
 		}
 		respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+		buf := make([]byte, respLen)
+		copy(buf, respBytes)
+		pulp.ReleaseHostAlloc(respPtr, respLen)
 		// The host encodes the completed http.fetch task body as an
 		// abi.HTTPResponse — decode into a matching shape. Status,
 		// Headers, Body share msgpack keys; Cookies/ID fields are
@@ -172,7 +175,7 @@ func Result(taskID uint32) (TaskResult, bool, error) {
 			Headers map[string]string `msgpack:"headers"`
 			Body    []byte            `msgpack:"body"`
 		}
-		if err := msgpack.Unmarshal(respBytes, &decoded); err != nil {
+		if err := msgpack.Unmarshal(buf, &decoded); err != nil {
 			return TaskResult{}, true, fmt.Errorf("decode result: %w", err)
 		}
 		return TaskResult{
@@ -187,7 +190,10 @@ func Result(taskID uint32) (TaskResult, bool, error) {
 		var msg string
 		if respLen > 0 {
 			respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
-			msg = string(respBytes)
+			msgBuf := make([]byte, respLen)
+			copy(msgBuf, respBytes)
+			pulp.ReleaseHostAlloc(respPtr, respLen)
+			msg = string(msgBuf)
 		}
 		if status == statusPanic && msg == "" {
 			msg = "task panicked"

@@ -283,8 +283,11 @@ func CreateCheckoutSession(req CheckoutRequest) (CheckoutSession, error) {
 		return CheckoutSession{}, fmt.Errorf("stripe_checkout_session_create: empty response")
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp CheckoutSession
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return CheckoutSession{}, fmt.Errorf("decode checkout: %w", err)
 	}
 	return resp, nil
@@ -315,8 +318,11 @@ func RetrieveCheckoutSession(id string) (CheckoutSessionDetails, error) {
 		return CheckoutSessionDetails{}, fmt.Errorf("stripe_checkout_session_get: empty response")
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp CheckoutSessionDetails
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return CheckoutSessionDetails{}, fmt.Errorf("decode checkout get: %w", err)
 	}
 	return resp, nil
@@ -361,8 +367,11 @@ func GetPaymentIntent(id string) (PaymentIntent, error) {
 		return PaymentIntent{}, fmt.Errorf("stripe_payment_intent_get: empty response")
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp PaymentIntent
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return PaymentIntent{}, fmt.Errorf("decode payment intent: %w", err)
 	}
 	return resp, nil
@@ -391,8 +400,11 @@ func CreateRefund(req RefundRequest) (Refund, error) {
 		return Refund{}, fmt.Errorf("stripe_refund_create: empty response")
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp Refund
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return Refund{}, fmt.Errorf("decode refund: %w", err)
 	}
 	return resp, nil
@@ -466,8 +478,11 @@ func paymentIntentRoundtrip(op string, hostFn func(uint32, uint32, uint32, uint3
 		return PaymentIntent{}, fmt.Errorf("%s: empty response", op)
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp PaymentIntent
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return PaymentIntent{}, fmt.Errorf("decode %s: %w", op, err)
 	}
 	return resp, nil
@@ -495,8 +510,11 @@ func CreateCustomer(req CustomerCreateRequest) (Customer, error) {
 		return Customer{}, fmt.Errorf("stripe_customer_create: empty response")
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp Customer
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return Customer{}, fmt.Errorf("decode customer: %w", err)
 	}
 	return resp, nil
@@ -547,8 +565,11 @@ func invoiceRoundtrip(op string, hostFn func(uint32, uint32, uint32, uint32) uin
 		return Invoice{}, fmt.Errorf("%s: empty response", op)
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp Invoice
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return Invoice{}, fmt.Errorf("decode %s: %w", op, err)
 	}
 	return resp, nil
@@ -576,8 +597,11 @@ func CreateInvoiceItem(req InvoiceItemCreateRequest) (InvoiceItem, error) {
 		return InvoiceItem{}, fmt.Errorf("stripe_invoice_item_create: empty response")
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp InvoiceItem
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return InvoiceItem{}, fmt.Errorf("decode invoice item: %w", err)
 	}
 	return resp, nil
@@ -599,8 +623,11 @@ func GetBalance() (Balance, error) {
 		return Balance{}, nil
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp Balance
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return Balance{}, fmt.Errorf("decode balance: %w", err)
 	}
 	return resp, nil
@@ -708,8 +735,11 @@ func CreateCoupon(req CouponCreateRequest) (Coupon, error) {
 		return Coupon{}, fmt.Errorf("stripe_coupon_create: empty response")
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp Coupon
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return Coupon{}, fmt.Errorf("decode coupon: %w", err)
 	}
 	return resp, nil
@@ -762,8 +792,11 @@ func promotionCodeRoundtrip(op string, hostFn func(uint32, uint32, uint32, uint3
 		return PromotionCode{}, nil
 	}
 	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
 	var resp PromotionCode
-	if err := msgpack.Unmarshal(respBytes, &resp); err != nil {
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return PromotionCode{}, fmt.Errorf("decode %s: %w", op, err)
 	}
 	return resp, nil
