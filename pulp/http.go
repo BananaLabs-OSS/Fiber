@@ -157,6 +157,9 @@ func (httpAPI) Fetch(req HTTPFetchRequest) (HTTPResponse, error) {
 		uint32(uintptr(unsafe.Pointer(&respLen))),
 	)
 	runtime.KeepAlive(reqBytes)
+	if code == 99 {
+		return HTTPResponse{}, ErrCapabilityUnavailable
+	}
 	if code != 0 {
 		return HTTPResponse{}, fmt.Errorf("http_fetch host code %d", code)
 	}
