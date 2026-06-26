@@ -92,6 +92,12 @@ var ErrStripeSignatureInvalid = errors.New("pulp/stripe: webhook signature inval
 // (e.g. card declined, invalid params). Callers can errors.Is on it.
 var ErrStripeAPI = errors.New("pulp/stripe: api error")
 
+// ErrStripeValidation is returned when a required field in the request
+// was absent despite the message decoding successfully (host code 14).
+// Distinct from a decode failure (code 3) — the wire was valid, a
+// business-required field was simply missing. Callers can errors.Is on it.
+var ErrStripeValidation = errors.New("pulp/stripe: validation failed (required field absent)")
+
 // CheckoutRequest is the input to CreateCheckoutSession.
 type CheckoutRequest struct {
 	AmountCents        int64             `msgpack:"amount_cents"`
@@ -804,7 +810,8 @@ func promotionCodeRoundtrip(op string, hostFn func(uint32, uint32, uint32, uint3
 
 // codeToError maps Pulp-ext-stripe host error codes to Go errors.
 // 99 → pulp.ErrCapabilityUnavailable; 10 = missing STRIPE_SECRET_KEY
-// on host; 6 = webhook signature invalid; 4 = Stripe API error.
+// on host; 6 = webhook signature invalid; 4 = Stripe API error;
+// 14 = validation failed (required field absent in an otherwise-valid request).
 func codeToError(op string, code uint32) error {
 	switch code {
 	case 0:
@@ -817,6 +824,8 @@ func codeToError(op string, code uint32) error {
 		return fmt.Errorf("%s: %w", op, ErrStripeSignatureInvalid)
 	case 4:
 		return fmt.Errorf("%s: %w", op, ErrStripeAPI)
+	case 14:
+		return fmt.Errorf("%s: %w", op, ErrStripeValidation)
 	default:
 		return fmt.Errorf("%s: host code %d", op, code)
 	}
