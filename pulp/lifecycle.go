@@ -112,7 +112,17 @@ func pulpInit(cfgPtr, cfgLen uint32) int32 {
 }
 
 //go:wasmexport pulp_step
-func pulpStep(inputPtr, inputLen uint32) int32 {
+func pulpStep(inputPtr, inputLen uint32) (rc int32) {
+	// GUARD: recover from any panic in a handler/tick so it fails THIS step only
+	// — never traps the whole wasm module. A module trap would kill the cell and
+	// 500 every subsequent request (the "cell did not respond" death). With this,
+	// a bad request, parse, or missing grammar fails alone; the cell stays alive.
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("[pulp] step PANIC recovered — cell survives: %v\n", r)
+			rc = 1
+		}
+	}()
 	if inputLen < 20 {
 		return 0
 	}
@@ -156,7 +166,13 @@ func pulpStep(inputPtr, inputLen uint32) int32 {
 }
 
 //go:wasmexport pulp_shutdown
-func pulpShutdown() int32 {
+func pulpShutdown() (rc int32) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("[pulp] shutdown PANIC recovered: %v\n", r)
+			rc = 1
+		}
+	}()
 	if userShutdown == nil {
 		return 0
 	}
