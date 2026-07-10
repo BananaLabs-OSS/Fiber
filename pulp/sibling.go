@@ -99,6 +99,40 @@ func Provide(name string, handler Provider) {
 	providersMu.Unlock()
 }
 
+// RawProvider is the TYPED, canonical-ABI alternative to Provider. Where a
+// Provider takes/returns msgpack []byte, a RawProvider works directly on the
+// cell's linear memory: it LIFTS the request straight out of argsPtr (via the
+// witcell-generated liftRequest), runs the typed domain handler, LOWERS the
+// result as a pointer tree pinned in the cell's alloc table (generated
+// lowerResult calling Alloc), and writes the (respPtr, respLen) out-params.
+//
+// A cell that registers a RawProvider must ALSO export pulp_post_return (the
+// generated cabi_post) so the host can tree-free the response after it has
+// lifted the typed value while the tree is still pinned. Returns 0 on success,
+// nonzero to signal an error to the caller (same code space as dispatchOnCall).
+//
+// This is emitted by the witcell generator; hand-written cells keep using
+// Provider. The two paths coexist — see ProvideRaw / dispatchOnCall.
+type RawProvider func(argsPtr, argsLen, respPtrOut, respLenOut uint32) uint32
+
+var (
+	rawProvidersMu sync.RWMutex
+	rawProviders   = map[string]RawProvider{}
+)
+
+// ProvideRaw registers a canonical-ABI (witcell) handler for a sibling-call
+// function name. It sits ALONGSIDE Provide, additively: dispatchOnCall checks
+// raw providers first and falls back to the msgpack providers, so registering
+// a RawProvider opts THAT ONE function into the typed lift/lower path while
+// every other name — and every cell that never calls ProvideRaw — keeps the
+// existing msgpack behaviour byte-for-byte. Overwrites any prior raw
+// registration with the same name.
+func ProvideRaw(name string, handler RawProvider) {
+	rawProvidersMu.Lock()
+	rawProviders[name] = handler
+	rawProvidersMu.Unlock()
+}
+
 // dispatchOnCall is the body of the pulp_on_call export. The host
 // invokes this when a sibling cell calls Call(thisCell, name, ...).
 // Returns 0 on success, nonzero to signal an error to the caller.
@@ -107,6 +141,21 @@ func dispatchOnCall(namePtr, nameLen, argsPtr, argsLen, respPtrOut, respLenOut u
 		return 1
 	}
 	name := string(unsafe.Slice((*byte)(unsafe.Pointer(uintptr(namePtr))), nameLen))
+
+	// Canonical-ABI (witcell) path — checked FIRST, additively. If a
+	// RawProvider is registered for this name, hand it the raw pointers: it
+	// lifts the request from linear memory, runs the typed handler, lowers the
+	// result as a pinned pointer tree, and writes (respPtr, respLen) to the
+	// out-params itself. The host then tree-frees via pulp_post_return. If no
+	// raw provider is registered (the case for every legacy msgpack cell), we
+	// fall through to the unchanged msgpack path below.
+	rawProvidersMu.RLock()
+	raw, rawOK := rawProviders[name]
+	rawProvidersMu.RUnlock()
+	if rawOK {
+		return raw(argsPtr, argsLen, respPtrOut, respLenOut)
+	}
+
 	var args []byte
 	if argsLen > 0 {
 		args = unsafe.Slice((*byte)(unsafe.Pointer(uintptr(argsPtr))), argsLen)

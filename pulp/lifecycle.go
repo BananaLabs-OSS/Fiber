@@ -95,6 +95,34 @@ func pulpFree(ptr, size uint32) {
 	allocMu.Unlock()
 }
 
+// Alloc reserves size bytes of cell linear memory and PINS the backing slice
+// in the cell's alloc table so Go's GC will not reclaim it until Free (or the
+// host's pulp_post_return) releases it. It shares the SAME allocTable as
+// pulpAlloc, so the host's pulp_free and the cell's own frees stay consistent.
+//
+// Alloc is the exported entry the witcell-generated canonical-ABI glue uses to
+// build a response pointer tree: lowerResult allocs each record/list/string
+// sub-buffer here (pinned), and the generated pulp_post_return tree-frees them
+// via Free after the host has lifted the typed value. Returns 0 for size 0.
+// Legacy msgpack cells never touch this — the opaque []byte path is unchanged.
+func Alloc(size uint32) uint32 { return pulpAlloc(size) }
+
+// Free releases a pointer previously returned by Alloc (or pulpAlloc),
+// unpinning it from the alloc table. Used by generated pulp_post_return glue
+// to tree-free a lowered canonical-ABI response.
+func Free(ptr uint32) { pulpFree(ptr, 0) }
+
+// AllocLive returns the number of buffers currently pinned in the cell's alloc
+// table. Diagnostic only: a canonical-ABI cell can export this so a host test
+// can assert that a lowered response tree returns to its baseline pin count
+// after pulp_post_return (i.e. zero leaked sub-buffers).
+func AllocLive() uint32 {
+	allocMu.Lock()
+	n := uint32(len(allocTable))
+	allocMu.Unlock()
+	return n
+}
+
 //go:wasmexport pulp_init
 func pulpInit(cfgPtr, cfgLen uint32) int32 {
 	var config []byte
