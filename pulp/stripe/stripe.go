@@ -51,6 +51,12 @@ func hostPaymentIntentCapture(reqPtr, reqLen, respPtrOut, respLenOut uint32) uin
 //go:wasmimport pulp stripe_payment_intent_cancel
 func hostPaymentIntentCancel(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
 
+//go:wasmimport pulp stripe_setup_intent_create
+func hostSetupIntentCreate(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
+
+//go:wasmimport pulp stripe_setup_intent_get
+func hostSetupIntentGet(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
+
 //go:wasmimport pulp stripe_refund_create
 func hostRefundCreate(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
 
@@ -178,6 +184,59 @@ type PaymentIntentCreateRequest struct {
 	IdempotencyKey     string            `msgpack:"idempotency_key,omitempty"`
 	PromotionCodeID    string            `msgpack:"promotion_code_id,omitempty"`
 	AutomaticTax       bool              `msgpack:"automatic_tax,omitempty"`
+	// PaymentMethod / OffSession / Confirm drive charging a STORED card while
+	// the customer is not present — "reserve now, charge when the server goes
+	// live". The three go together: PaymentMethod names the card saved earlier
+	// (see CreateSetupIntent), OffSession tells Stripe nobody is around to
+	// answer a 3DS prompt, and Confirm makes the host attempt the charge in
+	// this same call instead of handing a ClientSecret back to a UI.
+	//
+	// A declined off-session charge is a NORMAL outcome, not an error:
+	// insufficient funds, a card reissued during the wait, or
+	// authentication_required (the issuer wants the customer present after
+	// all). The host returns the PaymentIntent with LastErrorCode set rather
+	// than an error, so callers MUST inspect Status/LastErrorCode instead of
+	// treating a nil error as "paid".
+	PaymentMethod string `msgpack:"payment_method,omitempty"`
+	OffSession    bool   `msgpack:"off_session,omitempty"`
+	Confirm       bool   `msgpack:"confirm,omitempty"`
+}
+
+// SetupIntent is the decoded response returned by CreateSetupIntent and
+// GetSetupIntent. A SetupIntent stores a card for later use WITHOUT
+// charging it — no amount is involved.
+//
+// PaymentMethod is EMPTY until the customer completes the SetupIntent in
+// the browser with the ClientSecret; reading it back afterwards (via
+// GetSetupIntent) is how the caller learns which stored card to charge
+// later, by passing it as PaymentIntentCreateRequest.PaymentMethod.
+//
+// This is what makes an unbounded wait possible: a manual-capture
+// authorization hold expires in ~7 days, a saved PaymentMethod does not.
+type SetupIntent struct {
+	ID            string            `msgpack:"id"`
+	Status        string            `msgpack:"status"`
+	ClientSecret  string            `msgpack:"client_secret,omitempty"`
+	Customer      string            `msgpack:"customer,omitempty"`
+	PaymentMethod string            `msgpack:"payment_method,omitempty"`
+	Usage         string            `msgpack:"usage,omitempty"`
+	LastErrorMsg  string            `msgpack:"last_error,omitempty"`
+	LastErrorCode string            `msgpack:"last_error_code,omitempty"`
+	Metadata      map[string]string `msgpack:"metadata"`
+}
+
+// SetupIntentCreateRequest is the input to CreateSetupIntent. Usage is
+// "off_session" or "on_session" and tells Stripe how the stored card will
+// later be charged, which changes the authentication Stripe collects at
+// setup time; it defaults to "off_session" host-side, which is what a
+// later merchant-initiated charge needs. PaymentMethodTypes defaults to
+// ["card"] host-side.
+type SetupIntentCreateRequest struct {
+	Customer           string            `msgpack:"customer"`
+	Usage              string            `msgpack:"usage,omitempty"`
+	PaymentMethodTypes []string          `msgpack:"payment_method_types,omitempty"`
+	Metadata           map[string]string `msgpack:"metadata,omitempty"`
+	IdempotencyKey     string            `msgpack:"idempotency_key,omitempty"`
 }
 
 // Customer is a Stripe customer object (ID + email, which are the
@@ -490,6 +549,57 @@ func paymentIntentRoundtrip(op string, hostFn func(uint32, uint32, uint32, uint3
 	var resp PaymentIntent
 	if err := msgpack.Unmarshal(buf, &resp); err != nil {
 		return PaymentIntent{}, fmt.Errorf("decode %s: %w", op, err)
+	}
+	return resp, nil
+}
+
+// CreateSetupIntent creates a SetupIntent — it stores a payment method on
+// a customer for later use WITHOUT charging it. Returns the SetupIntent
+// including ClientSecret, which the caller passes to the front-end so the
+// customer can complete card entry. The resulting PaymentMethod is readable
+// via GetSetupIntent once they do, and is what a later off-session
+// CreatePaymentIntent charges.
+func CreateSetupIntent(req SetupIntentCreateRequest) (SetupIntent, error) {
+	return setupIntentRoundtrip("stripe_setup_intent_create", hostSetupIntentCreate, req)
+}
+
+// GetSetupIntent fetches a SetupIntent by ID. Use after the customer
+// completes it in the browser to read back Status and the stored
+// PaymentMethod (empty until then).
+func GetSetupIntent(id string) (SetupIntent, error) {
+	return setupIntentRoundtrip("stripe_setup_intent_get", hostSetupIntentGet, struct {
+		ID string `msgpack:"id"`
+	}{ID: id})
+}
+
+// setupIntentRoundtrip is the shared marshal/call/unmarshal scaffolding for
+// the two SetupIntent operations that share a response shape.
+func setupIntentRoundtrip(op string, hostFn func(uint32, uint32, uint32, uint32) uint32, req any) (SetupIntent, error) {
+	data, err := msgpack.Marshal(req)
+	if err != nil {
+		return SetupIntent{}, fmt.Errorf("encode %s: %w", op, err)
+	}
+	var respPtr, respLen uint32
+	code := hostFn(
+		uint32(uintptr(unsafe.Pointer(&data[0]))),
+		uint32(len(data)),
+		uint32(uintptr(unsafe.Pointer(&respPtr))),
+		uint32(uintptr(unsafe.Pointer(&respLen))),
+	)
+	runtime.KeepAlive(data)
+	if err := codeToError(op, code); err != nil {
+		return SetupIntent{}, err
+	}
+	if respLen == 0 {
+		return SetupIntent{}, fmt.Errorf("%s: empty response", op)
+	}
+	respBytes := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(respPtr))), respLen)
+	buf := make([]byte, respLen)
+	copy(buf, respBytes)
+	pulp.ReleaseHostAlloc(respPtr, respLen)
+	var resp SetupIntent
+	if err := msgpack.Unmarshal(buf, &resp); err != nil {
+		return SetupIntent{}, fmt.Errorf("decode %s: %w", op, err)
 	}
 	return resp, nil
 }
