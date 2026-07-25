@@ -57,18 +57,6 @@ const (
 	procStatusUnknown  = 4
 )
 
-//go:wasmimport pulp process_run
-func hostProcessRun(reqPtr, reqLen uint32) uint32
-
-//go:wasmimport pulp process_result
-func hostProcessResult(taskID, outPtrOut, outLenOut uint32) uint32
-
-//go:wasmimport pulp process_cancel
-func hostProcessCancel(taskID uint32) uint32
-
-//go:wasmimport pulp process_pending
-func hostProcessPending() uint32
-
 // firstTaskID mirrors the host: an id is >= 100, so a smaller return value from
 // process_run is an error code, not a task id.
 const firstTaskID = 100

@@ -27,14 +27,6 @@ import (
 // the target cell or one of its `provides` entries. The host rejects
 // unauthorized calls with error code 11.
 
-//go:wasmimport pulp pulp_call
-func hostPulpCall(
-	targetPtr, targetLen,
-	namePtr, nameLen,
-	argsPtr, argsLen,
-	respPtrOut, respLenOut uint32,
-) uint32
-
 // Call invokes funcName on target cell with args, returning the
 // cell's response bytes. The host enforces that this cell's
 // manifest declares `target` under consumes or depends_on.

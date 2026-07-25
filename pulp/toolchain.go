@@ -19,12 +19,6 @@ var Toolchain = toolchainAPI{}
 
 type toolchainAPI struct{}
 
-//go:wasmimport pulp toolchain_install
-func hostToolchainInstall(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp toolchain_status
-func hostToolchainStatus(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
 // Install asks the host to download + extract the toolchain for lang (e.g.
 // "go", "git") into its bundled runtime dir, picking the pinned URL for the
 // host's own OS/arch. It is idempotent — an already-present toolchain returns

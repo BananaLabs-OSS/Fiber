@@ -24,9 +24,6 @@ var Acquire = acquireAPI{}
 
 type acquireAPI struct{}
 
-//go:wasmimport pulp tool_acquire
-func hostToolAcquire(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
 // AcquireResult is the resolved outcome. Path is the absolute binary path when
 // Ok. Status is "resolved" (found on PATH / manual), "installed" (official
 // installer ran), "notfound", "unsupported", or "failed"; Message is detail.

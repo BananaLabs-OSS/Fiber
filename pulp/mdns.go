@@ -22,12 +22,6 @@ type MDNSEntry struct {
 	Addr string `msgpack:"addr"`
 }
 
-//go:wasmimport pulp mdns_browse
-func hostMDNSBrowse(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp mdns_announce
-func hostMDNSAnnounce(reqPtr, reqLen uint32) uint32
-
 // Browse returns peers advertising service (default "_projx._tcp") seen within
 // timeoutMs (default 2500).
 func (mdnsAPI) Browse(service string, timeoutMs uint32) ([]MDNSEntry, error) {

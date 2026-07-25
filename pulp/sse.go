@@ -23,15 +23,6 @@ var SSE = sseAPI{}
 
 type sseAPI struct{}
 
-//go:wasmimport pulp sse_register
-func hostSSERegister(ptr, ln uint32) uint32
-
-//go:wasmimport pulp sse_emit
-func hostSSEEmit(ptr, ln uint32) uint32
-
-//go:wasmimport pulp sse_has_subscribers
-func hostSSEHasSubscribers(pathPtr, pathLen, outCountPtr uint32) uint32
-
 // Register declares an SSE route. The host starts accepting client
 // connections on path after Register returns; incoming connections
 // are held open and fed whatever the cell later Emits.

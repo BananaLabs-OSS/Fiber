@@ -27,68 +27,9 @@ import (
 	"unsafe"
 
 	"github.com/BananaLabs-OSS/Fiber/pulp"
+	stripewire "github.com/BananaLabs-OSS/Fiber/pulp/stripe/internal/wire"
 	"github.com/vmihailenco/msgpack/v5"
 )
-
-//go:wasmimport pulp stripe_checkout_session_create
-func hostCheckoutSessionCreate(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_checkout_session_get
-func hostCheckoutSessionGet(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_webhook_verify
-func hostWebhookVerify(reqPtr, reqLen uint32) uint32
-
-//go:wasmimport pulp stripe_payment_intent_create
-func hostPaymentIntentCreate(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_payment_intent_get
-func hostPaymentIntentGet(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_payment_intent_capture
-func hostPaymentIntentCapture(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_payment_intent_cancel
-func hostPaymentIntentCancel(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_setup_intent_create
-func hostSetupIntentCreate(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_setup_intent_get
-func hostSetupIntentGet(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_refund_create
-func hostRefundCreate(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_customer_create
-func hostCustomerCreate(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_invoice_create
-func hostInvoiceCreate(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_invoice_finalize
-func hostInvoiceFinalize(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_invoice_mark_paid_out_of_band
-func hostInvoiceMarkPaidOutOfBand(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_invoice_item_create
-func hostInvoiceItemCreate(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_balance_get
-func hostBalanceGet(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_coupon_create
-func hostCouponCreate(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_promotion_code_create
-func hostPromotionCodeCreate(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_promotion_code_lookup
-func hostPromotionCodeLookup(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp stripe_promotion_code_update
-func hostPromotionCodeUpdate(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
 
 // ErrStripeSignatureInvalid is returned by VerifyWebhook when the
 // Stripe-Signature header did not validate against the raw payload.
@@ -105,16 +46,7 @@ var ErrStripeAPI = errors.New("pulp/stripe: api error")
 var ErrStripeValidation = errors.New("pulp/stripe: validation failed (required field absent)")
 
 // CheckoutRequest is the input to CreateCheckoutSession.
-type CheckoutRequest struct {
-	AmountCents        int64             `msgpack:"amount_cents"`
-	Currency           string            `msgpack:"currency"`
-	SuccessURL         string            `msgpack:"success_url"`
-	CancelURL          string            `msgpack:"cancel_url"`
-	ProductName        string            `msgpack:"product_name"`
-	ProductDescription string            `msgpack:"product_description,omitempty"`
-	Metadata           map[string]string `msgpack:"metadata,omitempty"`
-	AutomaticTax       bool              `msgpack:"automatic_tax,omitempty"`
-}
+type CheckoutRequest = stripewire.CheckoutRequest
 
 // CheckoutSession is the decoded response — the Session ID (for later
 // lookup) and the redirect URL to send the customer to.
@@ -248,10 +180,11 @@ type Customer struct {
 
 // CustomerCreateRequest is the input to CreateCustomer.
 type CustomerCreateRequest struct {
-	Email       string            `msgpack:"email,omitempty"`
-	Name        string            `msgpack:"name,omitempty"`
-	Description string            `msgpack:"description,omitempty"`
-	Metadata    map[string]string `msgpack:"metadata,omitempty"`
+	Email          string            `msgpack:"email,omitempty"`
+	Name           string            `msgpack:"name,omitempty"`
+	Description    string            `msgpack:"description,omitempty"`
+	Metadata       map[string]string `msgpack:"metadata,omitempty"`
+	IdempotencyKey string            `msgpack:"idempotency_key,omitempty"`
 }
 
 // Invoice carries the fields needed to drive the audit-trail flow for
@@ -280,6 +213,7 @@ type InvoiceCreateRequest struct {
 	CollectionMethod string            `msgpack:"collection_method,omitempty"`
 	Metadata         map[string]string `msgpack:"metadata,omitempty"`
 	PromotionCodeID  string            `msgpack:"promotion_code_id,omitempty"`
+	IdempotencyKey   string            `msgpack:"idempotency_key,omitempty"`
 }
 
 // InvoiceItem is the response of CreateInvoiceItem — just the ID.
@@ -290,11 +224,12 @@ type InvoiceItem struct {
 // InvoiceItemCreateRequest adds a line item to a customer or an
 // existing draft invoice.
 type InvoiceItemCreateRequest struct {
-	Customer    string `msgpack:"customer"`
-	Invoice     string `msgpack:"invoice,omitempty"`
-	AmountCents int64  `msgpack:"amount_cents"`
-	Currency    string `msgpack:"currency"`
-	Description string `msgpack:"description,omitempty"`
+	Customer       string `msgpack:"customer"`
+	Invoice        string `msgpack:"invoice,omitempty"`
+	AmountCents    int64  `msgpack:"amount_cents"`
+	Currency       string `msgpack:"currency"`
+	Description    string `msgpack:"description,omitempty"`
+	IdempotencyKey string `msgpack:"idempotency_key,omitempty"`
 }
 
 // Balance is the response of GetBalance.
@@ -645,18 +580,32 @@ func CreateInvoice(req InvoiceCreateRequest) (Invoice, error) {
 // FinalizeInvoice finalizes a draft invoice so it can be paid or
 // marked out-of-band.
 func FinalizeInvoice(id string) (Invoice, error) {
+	return FinalizeInvoiceWithKey(id, "")
+}
+
+// FinalizeInvoiceWithKey finalizes a draft invoice with a stable Stripe
+// idempotency key for retryable outbox processing.
+func FinalizeInvoiceWithKey(id, idempotencyKey string) (Invoice, error) {
 	return invoiceRoundtrip("stripe_invoice_finalize", hostInvoiceFinalize, struct {
-		ID string `msgpack:"id"`
-	}{ID: id})
+		ID             string `msgpack:"id"`
+		IdempotencyKey string `msgpack:"idempotency_key,omitempty"`
+	}{ID: id, IdempotencyKey: idempotencyKey})
 }
 
 // MarkInvoicePaidOutOfBand records an invoice as paid by a means
 // outside Stripe ($0 free orders, manual cash handling, etc.). The
 // invoice moves to the "paid" state with no money movement.
 func MarkInvoicePaidOutOfBand(id string) (Invoice, error) {
+	return MarkInvoicePaidOutOfBandWithKey(id, "")
+}
+
+// MarkInvoicePaidOutOfBandWithKey records an out-of-band payment with a
+// stable Stripe idempotency key for retryable compound free-invoice effects.
+func MarkInvoicePaidOutOfBandWithKey(id, idempotencyKey string) (Invoice, error) {
 	return invoiceRoundtrip("stripe_invoice_mark_paid_out_of_band", hostInvoiceMarkPaidOutOfBand, struct {
-		ID string `msgpack:"id"`
-	}{ID: id})
+		ID             string `msgpack:"id"`
+		IdempotencyKey string `msgpack:"idempotency_key,omitempty"`
+	}{ID: id, IdempotencyKey: idempotencyKey})
 }
 
 // invoiceRoundtrip is the shared scaffolding for the three invoice

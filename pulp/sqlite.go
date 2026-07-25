@@ -47,12 +47,6 @@ var SQLite = sqliteAPI{}
 
 type sqliteAPI struct{}
 
-//go:wasmimport pulp sqlite_exec
-func hostSQLiteExec(qPtr, qLen, pPtr, pLen, resPtrOut, resLenOut uint32) uint32
-
-//go:wasmimport pulp sqlite_query
-func hostSQLiteQuery(qPtr, qLen, pPtr, pLen, rowsPtrOut, rowsLenOut uint32) uint32
-
 // ExecResult is what Exec returns: rows affected + last insert row ID.
 // Matches the host's msgpack shape. Error is populated when the host
 // returns a non-zero code; callers see it as a returned error, not a

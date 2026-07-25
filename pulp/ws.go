@@ -15,15 +15,6 @@ var WS = wsAPI{}
 
 type wsAPI struct{}
 
-//go:wasmimport pulp ws_register
-func hostWSRegister(ptr, ln uint32) uint32
-
-//go:wasmimport pulp ws_send
-func hostWSSend(ptr, ln uint32) uint32
-
-//go:wasmimport pulp ws_close
-func hostWSClose(ptr, ln uint32) uint32
-
 // Register declares an inbound WebSocket route. The host begins
 // routing upgrade requests to this cell after Register returns.
 func (wsAPI) Register(path string) error {

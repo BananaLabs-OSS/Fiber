@@ -28,15 +28,6 @@ type WSOutFrame struct {
 	Data   []byte `msgpack:"data"`
 }
 
-//go:wasmimport pulp wsout_dial
-func hostWSOutDial(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp wsout_send
-func hostWSOutSend(id, dataPtr, dataLen uint32) uint32
-
-//go:wasmimport pulp wsout_close
-func hostWSOutClose(id uint32) uint32
-
 // Dial opens an outbound WebSocket to url (optionally with request headers) and
 // returns its connection id.
 func (wsoutAPI) Dial(url string, headers map[string]string) (uint32, error) {

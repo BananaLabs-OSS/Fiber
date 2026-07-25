@@ -25,9 +25,11 @@ type Gene interface {
 	ValidatePurchase(PurchaseRequest) (ValidatedOrder, error)
 
 	// OnOrderPaid fires after Stripe confirms payment (or immediately
-	// for SkipPayment=true orders). Gene creates its own records
-	// (vouchers, tokens) here and optionally requests a server spawn
-	// via engine.SpawnServer (sibling call back to engine).
+	// for SkipPayment=true orders). The gene may update product-owned
+	// records, but must not synchronously call back into the engine:
+	// Pulp rejects A->B->A sibling cycles. Engine-owned state changes
+	// are returned as enginecmd values from HandleRoute or performed
+	// by the engine before it invokes a lifecycle hook.
 	OnOrderPaid(OrderView) error
 
 	// FulfillmentSpec returns the container shape to hand to

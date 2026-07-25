@@ -33,9 +33,6 @@ const OTPDefaultAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 const maxBytes = 1 << 16 // 64 KiB per call — matches the host-side cap.
 
-//go:wasmimport pulp entropy_read
-func hostEntropyRead(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
 type readRequest struct {
 	N uint32 `msgpack:"n"`
 }

@@ -17,30 +17,6 @@ var HTTP = httpAPI{}
 
 type httpAPI struct{}
 
-//go:wasmimport pulp http_listen
-func hostHTTPListen(ptr, ln uint32) uint32
-
-//go:wasmimport pulp http_register
-func hostHTTPRegister(ptr, ln uint32) uint32
-
-//go:wasmimport pulp http_respond
-func hostHTTPRespond(ptr, ln uint32) uint32
-
-//go:wasmimport pulp http_fetch
-func hostHTTPFetch(reqPtr, reqLen, respPtrOut, respLenOut uint32) uint32
-
-//go:wasmimport pulp http_fetch_begin
-func hostHTTPFetchBegin(reqPtr, reqLen, hdrPtrOut, hdrLenOut uint32) uint32
-
-//go:wasmimport pulp http_fetch_read
-func hostHTTPFetchRead(streamIDLo, streamIDHi, maxBytes, chunkPtrOut, chunkLenOut uint32) uint32
-
-//go:wasmimport pulp http_fetch_close
-func hostHTTPFetchClose(streamIDLo, streamIDHi uint32) uint32
-
-//go:wasmimport pulp http_respond_stream
-func hostHTTPRespondStream(ptr, ln uint32) uint32
-
 // Listen declares the bind address this cell's HTTP routes register
 // against. Call once at cell init, before Register. Multiple cells
 // calling Listen with the same addr share a listener (routes keyed by
@@ -263,10 +239,10 @@ type StreamResponse struct {
 	chunkSize uint32
 	// buf holds bytes pulled from the last host read that the caller
 	// hasn't consumed yet.
-	buf      []byte
-	eof      bool
-	closed   bool
-	hostErr  error
+	buf     []byte
+	eof     bool
+	closed  bool
+	hostErr error
 }
 
 // Read implements io.Reader. Pulls chunks from the host on demand and

@@ -170,9 +170,9 @@ type RouterGroup struct {
 }
 
 type route struct {
-	method     string
-	pattern    string
-	handlers   []HandlerFunc
+	method   string
+	pattern  string
+	handlers []HandlerFunc
 }
 
 // New returns a fresh Engine. Multiple engines are not supported — the
