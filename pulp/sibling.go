@@ -2,6 +2,7 @@ package pulp
 
 import (
 	"fmt"
+	"log"
 	"runtime"
 	"sync"
 	"unsafe"
@@ -162,6 +163,7 @@ func dispatchOnCall(namePtr, nameLen, argsPtr, argsLen, respPtrOut, respLenOut u
 
 	resp, err := handler(args)
 	if err != nil {
+		log.Printf("[pulp] provider %q failed: %v", name, err)
 		return 11 // "provider returned error"
 	}
 	if len(resp) == 0 {
