@@ -22,13 +22,19 @@ const VersionV1 = "pulp.effect.v1"
 // work after an application upgrade.
 const (
 	KindStripePaymentIntentCreate     = "pulp.effect.stripe.payment-intent.create.v1"
+	KindStripePaymentIntentGet        = "pulp.effect.stripe.payment-intent.get.v1"
 	KindStripePaymentIntentCapture    = "pulp.effect.stripe.payment-intent.capture.v1"
 	KindStripePaymentIntentCancel     = "pulp.effect.stripe.payment-intent.cancel.v1"
 	KindStripeCheckoutSessionCreate   = "pulp.effect.stripe.checkout-session.create.v1"
 	KindStripeSetupIntentCreate       = "pulp.effect.stripe.setup-intent.create.v1"
+	KindStripeSetupIntentGet          = "pulp.effect.stripe.setup-intent.get.v1"
 	KindStripeRefundCreate            = "pulp.effect.stripe.refund.create.v1"
 	KindStripeCustomerCreate          = "pulp.effect.stripe.customer.create.v1"
 	KindStripeFreeInvoiceFinalize     = "pulp.effect.stripe.free-invoice.finalize.v1"
+	KindStripeInvoiceItemCreate       = "pulp.effect.stripe.invoice-item.create.v1"
+	KindStripeInvoiceCreate           = "pulp.effect.stripe.invoice.create.v1"
+	KindStripeInvoiceFinalize         = "pulp.effect.stripe.invoice.finalize.v1"
+	KindStripeInvoiceMarkPaid         = "pulp.effect.stripe.invoice.mark-paid.v1"
 	KindStripeCouponUpsert            = "pulp.effect.stripe.coupon.upsert.v1"
 	KindStripeCouponDelete            = "pulp.effect.stripe.coupon.delete.v1"
 	KindStripePromotionCodeUpsert     = "pulp.effect.stripe.promotion-code.upsert.v1"
@@ -40,8 +46,32 @@ const (
 	KindFleetServerResume      = "pulp.effect.fleet.server.resume.v1"
 	KindFleetServerDeprovision = "pulp.effect.fleet.server.deprovision.v1"
 	KindFleetExtensionApply    = "pulp.effect.fleet.extension.apply.v1"
+	// KindFleetRuntimeObservationExecute permits one typed, bounded live
+	// observation. It never carries an endpoint, command, path, or arbitrary
+	// query surface.
+	KindFleetRuntimeObservationExecute = "pulp.effect.fleet.runtime-observation.execute.v1"
 
 	KindNotificationEmailSend = "pulp.effect.notification.email.send.v1"
+	// KindServiceObservationExecute performs one authenticated, bounded read
+	// selected by an opaque host-configured service definition ID. It exposes
+	// no URL, credential, header or generic request surface.
+	KindServiceObservationExecute = "pulp.effect.service.observation.execute.v1"
+	// KindCapacityObservationExecute reads bounded provider-neutral node
+	// capacity facts from one opaque host-configured destination.
+	KindCapacityObservationExecute = "pulp.effect.capacity-observation.execute.v1"
+	// KindStatusSignalPublish publishes one bounded health signal through a
+	// host-owned status endpoint. The guest never controls a URL, header, or
+	// transport credential.
+	KindStatusSignalPublish = "pulp.effect.status.signal.publish.v1"
+	// KindHTTPProbeExecute is the legacy Control-owned unauthenticated status
+	// probe. Its URL is used only to derive a host-configured destination
+	// allowlist key; the guest cannot instruct the host to fetch that URL.
+	KindHTTPProbeExecute = "host.http.probe.v1"
+
+	// KindStorageExactObjectHead reads the generation inventory for one exact,
+	// application-owned object key. It is intentionally not a prefix/listing
+	// operation: the state owner supplies the full key to inspect.
+	KindStorageExactObjectHead = "pulp.effect.storage.exact-object.head.v1"
 )
 
 const maxFieldLength = 256
@@ -248,7 +278,10 @@ func (i Intent) Validate() error {
 	if err := validateRaw("effect payload", i.Payload); err != nil {
 		return err
 	}
-	return validateTypedPayload(i.Kind, i.Payload)
+	if err := validateTypedPayload(i.Kind, i.Payload); err != nil {
+		return err
+	}
+	return validateTypedIntentEnvelope(i)
 }
 
 // Validate checks receipt consistency without an Intent. ValidateFor also
@@ -378,6 +411,11 @@ var kindAliases = map[string]string{
 	"stripe.payment_intent.create":     KindStripePaymentIntentCreate,
 	"stripe.payment_intent.create.v1":  KindStripePaymentIntentCreate,
 	"stripe.payment-intent.create":     KindStripePaymentIntentCreate,
+	KindStripePaymentIntentGet:         KindStripePaymentIntentGet,
+	"payment_intent.get":               KindStripePaymentIntentGet,
+	"stripe.payment_intent.get":        KindStripePaymentIntentGet,
+	"stripe.payment_intent.get.v1":     KindStripePaymentIntentGet,
+	"stripe.payment-intent.get":        KindStripePaymentIntentGet,
 	KindStripePaymentIntentCapture:     KindStripePaymentIntentCapture,
 	"payment_intent.capture":           KindStripePaymentIntentCapture,
 	"stripe.payment_intent.capture":    KindStripePaymentIntentCapture,
@@ -400,6 +438,11 @@ var kindAliases = map[string]string{
 	"stripe.setup_intent.create":    KindStripeSetupIntentCreate,
 	"stripe.setup_intent.create.v1": KindStripeSetupIntentCreate,
 	"stripe.setup-intent.create":    KindStripeSetupIntentCreate,
+	KindStripeSetupIntentGet:        KindStripeSetupIntentGet,
+	"setup_intent.get":              KindStripeSetupIntentGet,
+	"stripe.setup_intent.get":       KindStripeSetupIntentGet,
+	"stripe.setup_intent.get.v1":    KindStripeSetupIntentGet,
+	"stripe.setup-intent.get":       KindStripeSetupIntentGet,
 
 	KindStripeRefundCreate:    KindStripeRefundCreate,
 	"refund.create":           KindStripeRefundCreate,
@@ -416,6 +459,24 @@ var kindAliases = map[string]string{
 	"stripe.free_invoice.finalize":    KindStripeFreeInvoiceFinalize,
 	"stripe.free_invoice.finalize.v1": KindStripeFreeInvoiceFinalize,
 	"stripe.free-invoice.finalize":    KindStripeFreeInvoiceFinalize,
+	KindStripeInvoiceItemCreate:       KindStripeInvoiceItemCreate,
+	"invoice_item.create":             KindStripeInvoiceItemCreate,
+	"stripe.invoice_item.create":      KindStripeInvoiceItemCreate,
+	"stripe.invoice_item.create.v1":   KindStripeInvoiceItemCreate,
+	"stripe.invoice-item.create":      KindStripeInvoiceItemCreate,
+	KindStripeInvoiceCreate:           KindStripeInvoiceCreate,
+	"invoice.create":                  KindStripeInvoiceCreate,
+	"stripe.invoice.create":           KindStripeInvoiceCreate,
+	"stripe.invoice.create.v1":        KindStripeInvoiceCreate,
+	KindStripeInvoiceFinalize:         KindStripeInvoiceFinalize,
+	"invoice.finalize":                KindStripeInvoiceFinalize,
+	"stripe.invoice.finalize":         KindStripeInvoiceFinalize,
+	"stripe.invoice.finalize.v1":      KindStripeInvoiceFinalize,
+	KindStripeInvoiceMarkPaid:         KindStripeInvoiceMarkPaid,
+	"invoice.mark_paid":               KindStripeInvoiceMarkPaid,
+	"stripe.invoice.mark_paid":        KindStripeInvoiceMarkPaid,
+	"stripe.invoice.mark_paid.v1":     KindStripeInvoiceMarkPaid,
+	"stripe.invoice.mark-paid":        KindStripeInvoiceMarkPaid,
 
 	KindStripeCouponUpsert:                KindStripeCouponUpsert,
 	"coupon.upsert":                       KindStripeCouponUpsert,
@@ -438,23 +499,33 @@ var kindAliases = map[string]string{
 	"stripe.promotion_code.deactivate":    KindStripePromotionCodeDeactivate,
 	"stripe.promotion_code.deactivate.v1": KindStripePromotionCodeDeactivate,
 
-	KindFleetServerProvision:             KindFleetServerProvision,
-	"fleet.provision":                    KindFleetServerProvision,
-	"fleet.provision.request":            KindFleetServerProvision,
-	KindFleetServerReconfigure:           KindFleetServerReconfigure,
-	"fleet.reconfigure":                  KindFleetServerReconfigure,
-	"fleet.reconfigure.request":          KindFleetServerReconfigure,
-	KindFleetServerSuspend:               KindFleetServerSuspend,
-	"fleet.suspend":                      KindFleetServerSuspend,
-	KindFleetServerResume:                KindFleetServerResume,
-	"fleet.resume":                       KindFleetServerResume,
-	KindFleetServerDeprovision:           KindFleetServerDeprovision,
-	"fleet.deprovision":                  KindFleetServerDeprovision,
-	"fleet.deprovision.request":          KindFleetServerDeprovision,
-	KindFleetExtensionApply:              KindFleetExtensionApply,
-	"fleet.extension.apply.v1":           KindFleetExtensionApply,
+	KindFleetServerProvision:           KindFleetServerProvision,
+	"fleet.provision":                  KindFleetServerProvision,
+	"fleet.provision.request":          KindFleetServerProvision,
+	KindFleetServerReconfigure:         KindFleetServerReconfigure,
+	"fleet.reconfigure":                KindFleetServerReconfigure,
+	"fleet.reconfigure.request":        KindFleetServerReconfigure,
+	KindFleetServerSuspend:             KindFleetServerSuspend,
+	"fleet.suspend":                    KindFleetServerSuspend,
+	KindFleetServerResume:              KindFleetServerResume,
+	"fleet.resume":                     KindFleetServerResume,
+	KindFleetServerDeprovision:         KindFleetServerDeprovision,
+	"fleet.deprovision":                KindFleetServerDeprovision,
+	"fleet.deprovision.request":        KindFleetServerDeprovision,
+	KindFleetExtensionApply:            KindFleetExtensionApply,
+	"fleet.extension.apply.v1":         KindFleetExtensionApply,
+	KindFleetRuntimeObservationExecute: KindFleetRuntimeObservationExecute,
 
 	KindNotificationEmailSend:                  KindNotificationEmailSend,
 	"workers.email.send":                       KindNotificationEmailSend,
 	"sessions.notification.extension.ready.v1": KindNotificationEmailSend,
+
+	KindServiceObservationExecute:  KindServiceObservationExecute,
+	KindCapacityObservationExecute: KindCapacityObservationExecute,
+
+	KindStatusSignalPublish: KindStatusSignalPublish,
+
+	KindHTTPProbeExecute: KindHTTPProbeExecute,
+
+	KindStorageExactObjectHead: KindStorageExactObjectHead,
 }

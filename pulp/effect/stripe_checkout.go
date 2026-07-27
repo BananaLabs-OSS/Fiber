@@ -163,6 +163,54 @@ func (r StripeFreeInvoiceFinalizeResult) Validate() error {
 
 func validateTypedPayload(kind string, raw msgpack.RawMessage) error {
 	switch kind {
+	case KindCapacityObservationExecute:
+		payload, err := decodeCapacityObservationCommandV1(raw)
+		if err != nil {
+			return err
+		}
+		return payload.Validate()
+	case KindServiceObservationExecute:
+		payload, err := decodeServiceObservationCommandV1(raw)
+		if err != nil {
+			return err
+		}
+		return payload.Validate()
+	case KindFleetRuntimeObservationExecute:
+		payload, err := decodeFleetRuntimeObservationIntentV1(raw)
+		if err != nil {
+			return err
+		}
+		return payload.Validate()
+	case KindStatusSignalPublish:
+		payload, err := decodeStatusSignalPublishPayload(raw)
+		if err != nil {
+			return err
+		}
+		return payload.Validate()
+	case KindHTTPProbeExecute:
+		payload, err := decodeHTTPProbeCommandV1(raw)
+		if err != nil {
+			return err
+		}
+		return payload.Validate()
+	case KindStorageExactObjectHead:
+		payload, err := decodeStorageExactObjectHeadPayload(raw)
+		if err != nil {
+			return err
+		}
+		return payload.Validate()
+	case KindStripeSetupIntentGet:
+		var payload StripeSetupIntentGetPayload
+		if err := msgpack.Unmarshal(raw, &payload); err != nil {
+			return fmt.Errorf("decode Stripe setup intent get payload: %w", err)
+		}
+		return payload.Validate()
+	case KindStripePaymentIntentGet:
+		payload, err := decodeStripePaymentIntentGetPayload(raw)
+		if err != nil {
+			return err
+		}
+		return payload.Validate()
 	case KindStripePaymentIntentCapture:
 		var payload StripePaymentIntentCapturePayload
 		if err := msgpack.Unmarshal(raw, &payload); err != nil {
@@ -185,6 +233,30 @@ func validateTypedPayload(kind string, raw msgpack.RawMessage) error {
 		var payload StripeFreeInvoiceFinalizePayload
 		if err := msgpack.Unmarshal(raw, &payload); err != nil {
 			return fmt.Errorf("decode Stripe free invoice payload: %w", err)
+		}
+		return payload.Validate()
+	case KindStripeInvoiceItemCreate:
+		var payload StripeInvoiceItemCreatePayload
+		if err := msgpack.Unmarshal(raw, &payload); err != nil {
+			return fmt.Errorf("decode Stripe invoice item create payload: %w", err)
+		}
+		return payload.Validate()
+	case KindStripeInvoiceCreate:
+		var payload StripeInvoiceCreatePayload
+		if err := msgpack.Unmarshal(raw, &payload); err != nil {
+			return fmt.Errorf("decode Stripe invoice create payload: %w", err)
+		}
+		return payload.Validate()
+	case KindStripeInvoiceFinalize:
+		var payload StripeInvoiceFinalizePayload
+		if err := msgpack.Unmarshal(raw, &payload); err != nil {
+			return fmt.Errorf("decode Stripe invoice finalize payload: %w", err)
+		}
+		return payload.Validate()
+	case KindStripeInvoiceMarkPaid:
+		var payload StripeInvoiceMarkPaidPayload
+		if err := msgpack.Unmarshal(raw, &payload); err != nil {
+			return fmt.Errorf("decode Stripe invoice mark-paid payload: %w", err)
 		}
 		return payload.Validate()
 	case KindStripeCouponUpsert:
@@ -216,8 +288,89 @@ func validateTypedPayload(kind string, raw msgpack.RawMessage) error {
 	}
 }
 
+func validateTypedIntentEnvelope(intent Intent) error {
+	switch intent.Kind {
+	case KindCapacityObservationExecute:
+		payload, err := decodeCapacityObservationCommandV1(intent.Payload)
+		if err != nil {
+			return err
+		}
+		if payload.CommandID != intent.ID || payload.IdempotencyKey != intent.IdempotencyKey {
+			return fmt.Errorf("capacity observation command does not match effect intent")
+		}
+	case KindServiceObservationExecute:
+		payload, err := decodeServiceObservationCommandV1(intent.Payload)
+		if err != nil {
+			return err
+		}
+		if payload.CommandID != intent.ID || payload.IdempotencyKey != intent.IdempotencyKey {
+			return fmt.Errorf("service observation command does not match effect intent")
+		}
+	case KindHTTPProbeExecute:
+		payload, err := decodeHTTPProbeCommandV1(intent.Payload)
+		if err != nil {
+			return err
+		}
+		if payload.EffectID != intent.ID ||
+			payload.IdempotencyKey != intent.IdempotencyKey ||
+			payload.Kind != intent.Kind ||
+			intent.ID != intent.IdempotencyKey {
+			return fmt.Errorf("HTTP probe command does not match effect intent")
+		}
+	}
+	return nil
+}
+
 func validateTypedResult(kind string, raw msgpack.RawMessage) error {
 	switch kind {
+	case KindCapacityObservationExecute:
+		result, err := decodeCapacityObservationResultV1(raw)
+		if err != nil {
+			return err
+		}
+		return result.Validate()
+	case KindServiceObservationExecute:
+		result, err := decodeServiceObservationResultV1(raw)
+		if err != nil {
+			return err
+		}
+		return result.Validate()
+	case KindFleetRuntimeObservationExecute:
+		result, err := decodeFleetRuntimeObservationReceiptV1(raw)
+		if err != nil {
+			return err
+		}
+		return result.Validate()
+	case KindStatusSignalPublish:
+		result, err := decodeStatusSignalPublishResult(raw)
+		if err != nil {
+			return err
+		}
+		return result.Validate()
+	case KindHTTPProbeExecute:
+		result, err := decodeHTTPProbeResultV1(raw)
+		if err != nil {
+			return err
+		}
+		return result.Validate()
+	case KindStorageExactObjectHead:
+		result, err := decodeStorageExactObjectHeadResult(raw)
+		if err != nil {
+			return err
+		}
+		return result.Validate()
+	case KindStripeSetupIntentGet:
+		var result StripeSetupIntentGetResult
+		if err := msgpack.Unmarshal(raw, &result); err != nil {
+			return fmt.Errorf("decode Stripe setup intent get result: %w", err)
+		}
+		return result.Validate()
+	case KindStripePaymentIntentGet:
+		result, err := decodeStripePaymentIntentGetResult(raw)
+		if err != nil {
+			return err
+		}
+		return result.Validate()
 	case KindStripePaymentIntentCapture, KindStripePaymentIntentCancel:
 		var result StripePaymentIntentMutationResult
 		if err := msgpack.Unmarshal(raw, &result); err != nil {
@@ -234,6 +387,18 @@ func validateTypedResult(kind string, raw msgpack.RawMessage) error {
 		var result StripeFreeInvoiceFinalizeResult
 		if err := msgpack.Unmarshal(raw, &result); err != nil {
 			return fmt.Errorf("decode Stripe free invoice result: %w", err)
+		}
+		return result.Validate()
+	case KindStripeInvoiceItemCreate:
+		var result StripeInvoiceItemCreateResult
+		if err := msgpack.Unmarshal(raw, &result); err != nil {
+			return fmt.Errorf("decode Stripe invoice item create result: %w", err)
+		}
+		return result.Validate()
+	case KindStripeInvoiceCreate, KindStripeInvoiceFinalize, KindStripeInvoiceMarkPaid:
+		var result StripeInvoiceResult
+		if err := msgpack.Unmarshal(raw, &result); err != nil {
+			return fmt.Errorf("decode Stripe invoice result: %w", err)
 		}
 		return result.Validate()
 	case KindStripeCouponUpsert:
@@ -270,6 +435,100 @@ func validateTypedReceiptForIntent(intent Intent, receipt Receipt) error {
 		return nil
 	}
 	switch intent.Kind {
+	case KindCapacityObservationExecute:
+		payload, err := decodeCapacityObservationCommandV1(intent.Payload)
+		if err != nil {
+			return err
+		}
+		result, err := decodeCapacityObservationResultV1(receipt.Result)
+		if err != nil {
+			return err
+		}
+		return result.ValidateFor(payload)
+	case KindServiceObservationExecute:
+		payload, err := decodeServiceObservationCommandV1(intent.Payload)
+		if err != nil {
+			return err
+		}
+		if payload.CommandID != intent.ID || payload.IdempotencyKey != intent.IdempotencyKey {
+			return fmt.Errorf("service observation command does not match effect intent")
+		}
+		result, err := decodeServiceObservationResultV1(receipt.Result)
+		if err != nil {
+			return err
+		}
+		return result.ValidateFor(payload)
+	case KindFleetRuntimeObservationExecute:
+		payload, err := decodeFleetRuntimeObservationIntentV1(intent.Payload)
+		if err != nil {
+			return err
+		}
+		result, err := decodeFleetRuntimeObservationReceiptV1(receipt.Result)
+		if err != nil {
+			return err
+		}
+		return result.ValidateFor(payload)
+	case KindStatusSignalPublish:
+		payload, err := decodeStatusSignalPublishPayload(intent.Payload)
+		if err != nil {
+			return err
+		}
+		result, err := decodeStatusSignalPublishResult(receipt.Result)
+		if err != nil {
+			return err
+		}
+		if payload.Target != result.Target || payload.Signal != result.Signal || payload.ExpiresAtUnix != result.ExpiresAtUnix {
+			return fmt.Errorf("status signal result does not match planned signal")
+		}
+	case KindHTTPProbeExecute:
+		payload, err := decodeHTTPProbeCommandV1(intent.Payload)
+		if err != nil {
+			return err
+		}
+		result, err := decodeHTTPProbeResultV1(receipt.Result)
+		if err != nil {
+			return err
+		}
+		return result.ValidateFor(payload)
+	case KindStorageExactObjectHead:
+		payload, err := decodeStorageExactObjectHeadPayload(intent.Payload)
+		if err != nil {
+			return err
+		}
+		result, err := decodeStorageExactObjectHeadResult(receipt.Result)
+		if err != nil {
+			return err
+		}
+		if payload.ExactKey != result.ExactKey {
+			return fmt.Errorf("storage exact object result does not match exact_key")
+		}
+		if result.Absent && !payload.AllowAbsent {
+			return fmt.Errorf("storage exact object result is absent but allow_absent is false")
+		}
+	case KindStripeSetupIntentGet:
+		var payload StripeSetupIntentGetPayload
+		var result StripeSetupIntentGetResult
+		if err := msgpack.Unmarshal(intent.Payload, &payload); err != nil {
+			return err
+		}
+		if err := msgpack.Unmarshal(receipt.Result, &result); err != nil {
+			return err
+		}
+		if payload.SetupIntentID != result.SetupIntentID {
+			return fmt.Errorf("Stripe setup intent result does not match setup_intent_id")
+		}
+	case KindStripePaymentIntentGet:
+		payload, err := decodeStripePaymentIntentGetPayload(intent.Payload)
+		if err != nil {
+			return err
+		}
+		result, err := decodeStripePaymentIntentGetResult(receipt.Result)
+		if err != nil {
+			return err
+		}
+		if payload.PaymentIntentID != result.PaymentIntentID {
+			return fmt.Errorf("Stripe payment intent get result does not match payment_intent_id")
+		}
 	case KindStripePaymentIntentCapture:
 		var payload StripePaymentIntentCapturePayload
 		var result StripePaymentIntentMutationResult
@@ -293,6 +552,30 @@ func validateTypedReceiptForIntent(intent Intent, receipt Receipt) error {
 		}
 		if payload.PaymentIntentID != result.PaymentIntentID {
 			return fmt.Errorf("Stripe cancel result does not match payment_intent_id")
+		}
+	case KindStripeInvoiceFinalize:
+		var payload StripeInvoiceFinalizePayload
+		var result StripeInvoiceResult
+		if err := msgpack.Unmarshal(intent.Payload, &payload); err != nil {
+			return err
+		}
+		if err := msgpack.Unmarshal(receipt.Result, &result); err != nil {
+			return err
+		}
+		if payload.InvoiceID != result.InvoiceID {
+			return fmt.Errorf("Stripe invoice finalize result does not match invoice_id")
+		}
+	case KindStripeInvoiceMarkPaid:
+		var payload StripeInvoiceMarkPaidPayload
+		var result StripeInvoiceResult
+		if err := msgpack.Unmarshal(intent.Payload, &payload); err != nil {
+			return err
+		}
+		if err := msgpack.Unmarshal(receipt.Result, &result); err != nil {
+			return err
+		}
+		if payload.InvoiceID != result.InvoiceID {
+			return fmt.Errorf("Stripe invoice mark-paid result does not match invoice_id")
 		}
 	case KindStripeCouponUpsert:
 		var payload StripeCouponUpsertPayload
