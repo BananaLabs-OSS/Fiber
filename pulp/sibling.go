@@ -108,6 +108,8 @@ func Provide(name string, handler Provider) {
 // Provider. The two paths coexist — see ProvideRaw / dispatchOnCall.
 type RawProvider func(argsPtr, argsLen, respPtrOut, respLenOut uint32) uint32
 
+const maxCallErrorBytes = 4096
+
 var (
 	rawProvidersMu sync.RWMutex
 	rawProviders   = map[string]RawProvider{}
@@ -120,8 +122,8 @@ func recordCallError(err error) {
 		return
 	}
 	lastCallError = []byte(err.Error())
-	if len(lastCallError) > maxInitErrorBytes {
-		lastCallError = append(lastCallError[:maxInitErrorBytes-3:maxInitErrorBytes-3], '.', '.', '.')
+	if len(lastCallError) > maxCallErrorBytes {
+		lastCallError = append(lastCallError[:maxCallErrorBytes-3:maxCallErrorBytes-3], '.', '.', '.')
 	}
 }
 
