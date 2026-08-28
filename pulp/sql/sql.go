@@ -208,19 +208,19 @@ type Tx struct {
 
 // Commit closes the transaction with COMMIT.
 func (t *Tx) Commit() error {
+	t.conn.inTx = false
 	if _, err := pulp.SQLite.Exec("COMMIT"); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}
-	t.conn.inTx = false
 	return nil
 }
 
 // Rollback closes the transaction with ROLLBACK.
 func (t *Tx) Rollback() error {
+	t.conn.inTx = false
 	if _, err := pulp.SQLite.Exec("ROLLBACK"); err != nil {
 		return fmt.Errorf("rollback: %w", err)
 	}
-	t.conn.inTx = false
 	return nil
 }
 
