@@ -30,7 +30,14 @@ var (
 	userStep     StepFunc
 	userTick     TickFunc
 	userShutdown ShutdownFunc
+	// initError holds the bounded, failure-only startup diagnostic exposed to
+	// the host through pulp_init_error_{ptr,len}. It deliberately does not use
+	// guest stdout/stderr: hosts discard those streams to avoid leaking a
+	// guest's arbitrary output into host protocols or logs.
+	initError []byte
 )
+
+const maxInitErrorBytes = 4096
 
 // OnInit registers the function the cell calls during pulp_init.
 // Call this from an init() in your main package. Replacing a previous
@@ -125,6 +132,7 @@ func AllocLive() uint32 {
 
 //go:wasmexport pulp_init
 func pulpInit(cfgPtr, cfgLen uint32) int32 {
+	initError = nil
 	var config []byte
 	if cfgLen > 0 {
 		config = unsafe.Slice((*byte)(unsafe.Pointer(uintptr(cfgPtr))), cfgLen)
@@ -133,11 +141,30 @@ func pulpInit(cfgPtr, cfgLen uint32) int32 {
 		return 0
 	}
 	if err := userInit(config); err != nil {
-		fmt.Printf("[pulp] init error: %v\n", err)
+		initError = []byte(err.Error())
+		if len(initError) > maxInitErrorBytes {
+			initError = append(initError[:maxInitErrorBytes-3:maxInitErrorBytes-3], '.', '.', '.')
+		}
 		return 1
 	}
 	return 0
 }
+
+// pulp_init_error_ptr and pulp_init_error_len are optional, failure-only
+// diagnostics for a host after pulp_init returns non-zero. They are additive:
+// older cells do not need to export them. The bytes are capped and are never
+// written to stdout/stderr, preserving the normal guest-output isolation.
+//
+//go:wasmexport pulp_init_error_ptr
+func pulpInitErrorPtr() uint32 {
+	if len(initError) == 0 {
+		return 0
+	}
+	return uint32(uintptr(unsafe.Pointer(&initError[0])))
+}
+
+//go:wasmexport pulp_init_error_len
+func pulpInitErrorLen() uint32 { return uint32(len(initError)) }
 
 //go:wasmexport pulp_step
 func pulpStep(inputPtr, inputLen uint32) (rc int32) {
