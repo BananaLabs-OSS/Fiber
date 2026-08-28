@@ -111,7 +111,19 @@ type RawProvider func(argsPtr, argsLen, respPtrOut, respLenOut uint32) uint32
 var (
 	rawProvidersMu sync.RWMutex
 	rawProviders   = map[string]RawProvider{}
+	lastCallError  []byte
 )
+
+func recordCallError(err error) {
+	lastCallError = nil
+	if err == nil {
+		return
+	}
+	lastCallError = []byte(err.Error())
+	if len(lastCallError) > maxInitErrorBytes {
+		lastCallError = append(lastCallError[:maxInitErrorBytes-3:maxInitErrorBytes-3], '.', '.', '.')
+	}
+}
 
 // ProvideRaw registers a canonical-ABI (witcell) handler for a sibling-call
 // function name. It sits ALONGSIDE Provide, additively: dispatchOnCall checks
@@ -130,6 +142,7 @@ func ProvideRaw(name string, handler RawProvider) {
 // invokes this when a sibling cell calls Call(thisCell, name, ...).
 // Returns 0 on success, nonzero to signal an error to the caller.
 func dispatchOnCall(namePtr, nameLen, argsPtr, argsLen, respPtrOut, respLenOut uint32) uint32 {
+	lastCallError = nil
 	if nameLen == 0 {
 		return 1
 	}
@@ -163,6 +176,7 @@ func dispatchOnCall(namePtr, nameLen, argsPtr, argsLen, respPtrOut, respLenOut u
 
 	resp, err := handler(args)
 	if err != nil {
+		recordCallError(err)
 		log.Printf("[pulp] provider %q failed: %v", name, err)
 		return 11 // "provider returned error"
 	}
@@ -189,6 +203,21 @@ func dispatchOnCall(namePtr, nameLen, argsPtr, argsLen, respPtrOut, respLenOut u
 	writeOutLen(respLenOut, uint32(len(buf)))
 	return 0
 }
+
+// pulp_on_call_error_ptr and pulp_on_call_error_len are optional, bounded
+// diagnostics read only by the host after pulp_on_call fails. As with startup
+// diagnostics, normal guest stdout/stderr stays isolated.
+//
+//go:wasmexport pulp_on_call_error_ptr
+func pulpOnCallErrorPtr() uint32 {
+	if len(lastCallError) == 0 {
+		return 0
+	}
+	return uint32(uintptr(unsafe.Pointer(&lastCallError[0])))
+}
+
+//go:wasmexport pulp_on_call_error_len
+func pulpOnCallErrorLen() uint32 { return uint32(len(lastCallError)) }
 
 // writeOutPtr / writeOutLen write a uint32 into cell linear memory
 // at the address encoded in outAddr. outAddr is itself a cell-memory
