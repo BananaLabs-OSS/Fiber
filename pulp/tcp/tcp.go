@@ -47,6 +47,10 @@ type writeResponse struct {
 type closeRequest struct {
 	ID uint64 `msgpack:"id"`
 }
+type bridgeRequest struct {
+	LeftID  uint64 `msgpack:"left_id"`
+	RightID uint64 `msgpack:"right_id"`
+}
 type halfCloseRequest struct {
 	ConnectionID uint64 `msgpack:"connection_id"`
 	Direction    string `msgpack:"direction"`
@@ -172,6 +176,15 @@ func (c *Connection) Close() error {
 		registry.Unlock()
 	}
 	return err
+}
+
+// Bridge transfers both directions directly in the supervised host data
+// plane. Neither connection may already have an OnData reader installed.
+func Bridge(left, right *Connection) error {
+	if left == nil || right == nil {
+		return fmt.Errorf("tcp_bridge: both connections are required")
+	}
+	return call2("tcp_bridge", hostBridge, bridgeRequest{LeftID: left.id, RightID: right.id})
 }
 func (l *Listener) Close() error {
 	err := call2("tcp_listener_close", hostListenerClose, closeRequest{ID: l.id})
