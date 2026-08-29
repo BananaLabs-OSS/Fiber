@@ -44,6 +44,14 @@ type writeRequest struct {
 type writeResponse struct {
 	BytesWritten int `msgpack:"bytes_written"`
 }
+type readRequest struct {
+	ConnectionID uint64 `msgpack:"connection_id"`
+	MaxBytes     int    `msgpack:"max_bytes"`
+	TimeoutMS    int    `msgpack:"timeout_ms,omitempty"`
+}
+type readResponse struct {
+	Payload []byte `msgpack:"payload"`
+}
 type closeRequest struct {
 	ID uint64 `msgpack:"id"`
 }
@@ -161,6 +169,18 @@ func (c *Connection) Write(payload []byte, timeoutMS int) (int, error) {
 		return 0, err
 	}
 	return out.BytesWritten, nil
+}
+
+// ReadPreface synchronously consumes one bounded prefix chunk before an
+// asynchronous OnData reader or native Bridge has started. It exists for
+// protocol classification; the caller must replay the returned bytes exactly
+// to the selected backend before bridging.
+func (c *Connection) ReadPreface(maxBytes, timeoutMS int) ([]byte, error) {
+	var out readResponse
+	if err := call4("tcp_read_preface", hostReadPreface, readRequest{ConnectionID: c.id, MaxBytes: maxBytes, TimeoutMS: timeoutMS}, &out); err != nil {
+		return nil, err
+	}
+	return out.Payload, nil
 }
 func (c *Connection) CloseWrite() error {
 	return call2("tcp_half_close", hostHalfClose, halfCloseRequest{ConnectionID: c.id, Direction: "write"})
