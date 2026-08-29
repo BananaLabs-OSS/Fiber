@@ -187,7 +187,14 @@ func (l *Listener) OnAccept(fn func(*Connection, Accepted)) {
 	l.onAccept = fn
 	registry.Unlock()
 }
-func (c *Connection) OnData(fn func(Data)) { registry.Lock(); c.onData = fn; registry.Unlock() }
+func (c *Connection) OnData(fn func(Data)) {
+	registry.Lock()
+	c.onData = fn
+	registry.Unlock()
+	// The host deliberately leaves reads paused until the handler exists so a
+	// fast peer cannot race tcp.data ahead of tcp.accepted/tcp_connect setup.
+	_ = call2("tcp_start_read", hostStartRead, closeRequest{ID: c.id})
+}
 func (c *Connection) OnHalfClose(fn func(HalfClosed)) {
 	registry.Lock()
 	c.onHalfClose = fn

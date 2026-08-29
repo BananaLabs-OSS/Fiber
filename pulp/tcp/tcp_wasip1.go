@@ -11,6 +11,9 @@ func hostConnect(uint32, uint32, uint32, uint32) uint32
 //go:wasmimport pulp tcp_write
 func hostWrite(uint32, uint32, uint32, uint32) uint32
 
+//go:wasmimport pulp tcp_start_read
+func hostStartRead(uint32, uint32) uint32
+
 //go:wasmimport pulp tcp_half_close
 func hostHalfClose(uint32, uint32) uint32
 
