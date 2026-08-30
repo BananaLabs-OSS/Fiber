@@ -100,6 +100,8 @@ func ExecuteFleetEffect(intent Intent) (Receipt, error) {
 
 func isFleetEffectKind(intent Intent) bool {
 	switch intent.Kind {
+	case KindFleetServerProvision:
+		return true
 	case KindFleetServerDeprovision:
 		return true
 	case KindFleetExtensionApply:

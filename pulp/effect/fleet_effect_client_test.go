@@ -39,6 +39,30 @@ func TestExecuteFleetEffectCanonicalReceipt(t *testing.T) {
 	}
 }
 
+func TestExecuteFleetEffectAdmitsCanonicalProvision(t *testing.T) {
+	intent, err := NewIntent("provision-1", KindFleetServerProvision, "provision-key-1", map[string]any{
+		"server_id": "server-1", "node_id": "node-1", "template": "minecraft",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := NewCompletedReceipt(intent, map[string]any{
+		"server_id": "server-1", "node_id": "node-1", "container_id": "container-1", "status": "active",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := MarshalReceipt(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restore := replaceFleetEffectHost(t, func(request []byte) ([]byte, uint32) { return wire, 0 })
+	defer restore()
+	if _, err := ExecuteFleetEffect(intent); err != nil {
+		t.Fatalf("ExecuteFleetEffect: %v", err)
+	}
+}
+
 func TestExecuteFleetEffectRejectsCapabilityAndInvalidReceipt(t *testing.T) {
 	intent := fleetEffectTestIntent(t)
 	if _, err := ExecuteFleetEffect(intent); !errors.Is(err, pulp.ErrCapabilityUnavailable) {
