@@ -5,6 +5,10 @@ package pulp
 // Native builds do not have a Pulp host. Every guest import fails closed.
 func hostSSERegister(ptr, ln uint32) uint32 { return 99 }
 
+func hostSSERegisterV2(ptr, ln uint32) uint32 { return 99 }
+
 func hostSSEEmit(ptr, ln uint32) uint32 { return 99 }
+
+func hostSSEEmitV2(ptr, ln uint32) uint32 { return 99 }
 
 func hostSSEHasSubscribers(pathPtr, pathLen, outCountPtr uint32) uint32 { return 99 }

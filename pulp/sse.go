@@ -23,6 +23,76 @@ var SSE = sseAPI{}
 
 type sseAPI struct{}
 
+type SSEAudience string
+
+const (
+	SSEAudiencePublic  SSEAudience = "public"
+	SSEAudienceAccount SSEAudience = "account"
+	SSEAudiencePool    SSEAudience = "pool"
+)
+
+type SecureSSERoute struct {
+	Pattern     string
+	Audience    SSEAudience
+	MaxClients  uint32
+	QueueDepth  uint32
+	ReplayLimit uint32
+}
+
+// RegisterSecure registers the subscriber-aware v2 transport. Authorization
+// is performed by the fixed host ABI provider before the stream is accepted.
+func (sseAPI) RegisterSecure(route SecureSSERoute) error {
+	req := struct {
+		Version     string      `msgpack:"version"`
+		Pattern     string      `msgpack:"pattern"`
+		Audience    SSEAudience `msgpack:"audience"`
+		MaxClients  uint32      `msgpack:"max_clients"`
+		QueueDepth  uint32      `msgpack:"queue_depth"`
+		ReplayLimit uint32      `msgpack:"replay_limit"`
+	}{"pulp.sse.v2", route.Pattern, route.Audience, route.MaxClients, route.QueueDepth, route.ReplayLimit}
+	body, err := msgpack.Marshal(req)
+	if err != nil || len(body) == 0 {
+		return fmt.Errorf("encode secure sse route: %w", err)
+	}
+	code := hostSSERegisterV2(uint32(uintptr(unsafe.Pointer(&body[0]))), uint32(len(body)))
+	runtime.KeepAlive(body)
+	if code != 0 {
+		return fmt.Errorf("sse_register_v2 host code %d", code)
+	}
+	return nil
+}
+
+type SecureSSEEvent struct {
+	Audience SSEAudience
+	Binding  string
+	Topic    string
+	ID       string
+	Event    string
+	Data     string
+}
+
+func (sseAPI) EmitSecure(event SecureSSEEvent) error {
+	req := struct {
+		Version  string `msgpack:"version"`
+		Audience string `msgpack:"audience"`
+		Binding  string `msgpack:"binding"`
+		Topic    string `msgpack:"topic,omitempty"`
+		ID       string `msgpack:"id,omitempty"`
+		Event    string `msgpack:"event,omitempty"`
+		Data     string `msgpack:"data"`
+	}{"pulp.sse.v2", string(event.Audience), event.Binding, event.Topic, event.ID, event.Event, event.Data}
+	body, err := msgpack.Marshal(req)
+	if err != nil || len(body) == 0 {
+		return fmt.Errorf("encode secure sse event: %w", err)
+	}
+	code := hostSSEEmitV2(uint32(uintptr(unsafe.Pointer(&body[0]))), uint32(len(body)))
+	runtime.KeepAlive(body)
+	if code != 0 {
+		return fmt.Errorf("sse_emit_v2 host code %d", code)
+	}
+	return nil
+}
+
 // Register declares an SSE route. The host starts accepting client
 // connections on path after Register returns; incoming connections
 // are held open and fed whatever the cell later Emits.
