@@ -91,7 +91,7 @@ func TestServiceObservationContractBoundsReceiptEvidence(t *testing.T) {
 
 func serviceObservationCommandForTest() ServiceObservationCommandV1 {
 	return ServiceObservationCommandV1{
-		Contract: ServiceObservationContractV1, ServiceDefinitionID: "sessions.stripe.primary",
+		Contract: ServiceObservationContractV1, ServiceDefinitionID: "example.payment.primary",
 		CommandID: "observe-stripe-1", IdempotencyKey: "observe-stripe-1",
 		Fence: ServiceObservationFenceV1{
 			LeaseID: "lease-stripe-1", Attempt: 2, LeaseExpiresAt: "2026-07-26T13:00:00Z",

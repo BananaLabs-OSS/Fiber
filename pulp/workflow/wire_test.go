@@ -9,10 +9,10 @@ import (
 
 func TestDispatchWireRoundTrip(t *testing.T) {
 	request := DispatchRequest{
-		Event: "evolution.gene.route.requested.v1",
+		Event: "example.route.requested.v1",
 		Payload: map[string]any{
-			"gene": "sessions",
-			"path": "/api/tiers",
+			"module": "catalog",
+			"path":   "/api/items",
 		},
 	}
 	encoded, err := msgpack.Marshal(request)
@@ -27,7 +27,7 @@ func TestDispatchWireRoundTrip(t *testing.T) {
 		t.Fatalf("event = %q, want %q", decoded.Event, request.Event)
 	}
 	payload, ok := decoded.Payload.(map[string]any)
-	if !ok || payload["gene"] != "sessions" || payload["path"] != "/api/tiers" {
+	if !ok || payload["module"] != "catalog" || payload["path"] != "/api/items" {
 		t.Fatalf("payload = %#v", decoded.Payload)
 	}
 

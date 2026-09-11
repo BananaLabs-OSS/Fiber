@@ -12,7 +12,7 @@ func TestCheckoutRequestIdempotencyKeyMessagePackABI(t *testing.T) {
 		Currency:       "usd",
 		SuccessURL:     "https://example.test/success",
 		CancelURL:      "https://example.test/cancel",
-		ProductName:    "Sessions server",
+		ProductName:    "Example service",
 		IdempotencyKey: "checkout:order-42",
 	}
 	encoded, err := msgpack.Marshal(req)

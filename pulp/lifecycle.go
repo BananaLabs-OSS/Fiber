@@ -65,7 +65,7 @@ func OnShutdown(fn ShutdownFunc) { userShutdown = fn }
 // pulpAlloc would be freed by Go's GC the moment pulpAlloc returns —
 // the host would then write response bytes into memory the cell
 // runtime has already reused for stack/heap, producing garbage on the
-// cell side. Observed in practice with Bananagine's FS.List where
+// cell side. Observed in practice with host FS.List implementations where
 // the host encoded a valid 25-byte response but the cell saw 8
 // bytes of overwritten pointer data followed by more garbage.
 //

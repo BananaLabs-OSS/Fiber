@@ -240,6 +240,26 @@ func TestFleetRuntimeObservationDetailedFieldsSurviveCanonicalWire(t *testing.T)
 		data  FleetRuntimeObservationDataV1
 	}{
 		{
+			field: FleetRuntimeObservationFieldSettingsV1,
+			data:  FleetRuntimeObservationDataV1{Settings: map[string]string{}},
+		},
+		{
+			field: FleetRuntimeObservationFieldGameRulesV1,
+			data:  FleetRuntimeObservationDataV1{GameRules: map[string]string{}},
+		},
+		{
+			field: FleetRuntimeObservationFieldPlayersV1,
+			data:  FleetRuntimeObservationDataV1{Players: []string{}},
+		},
+		{
+			field: FleetRuntimeObservationFieldPlayerHistoryV1,
+			data:  FleetRuntimeObservationDataV1{PlayerHistory: []FleetRuntimePlayerHistoryEntryV1{}},
+		},
+		{
+			field: FleetRuntimeObservationFieldArtifactsV1,
+			data:  FleetRuntimeObservationDataV1{Artifacts: []FleetRuntimeObservedArtifactV1{}},
+		},
+		{
 			field: FleetRuntimeObservationFieldPlayerHistoryV1,
 			data: FleetRuntimeObservationDataV1{PlayerHistory: []FleetRuntimePlayerHistoryEntryV1{{
 				UUID: "12345678-1234-1234-1234-123456789abc",

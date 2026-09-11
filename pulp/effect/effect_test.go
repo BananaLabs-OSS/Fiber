@@ -79,7 +79,6 @@ func TestNormalizeKindLegacyAliases(t *testing.T) {
 		"fleet.provision.request":                  KindFleetServerProvision,
 		"fleet.deprovision.request":                KindFleetServerDeprovision,
 		"fleet.extension.apply.v1":                 KindFleetExtensionApply,
-		"sessions.notification.extension.ready.v1": KindNotificationEmailSend,
 		"workers.email.send":                       KindNotificationEmailSend,
 	}
 	for alias, want := range tests {

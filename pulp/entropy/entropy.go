@@ -28,7 +28,7 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-// OTPDefaultAlphabet matches Bananauth's existing OTP alphabet: A-Z0-9.
+// OTPDefaultAlphabet contains the unambiguous uppercase OTP alphabet A-Z0-9.
 const OTPDefaultAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 const maxBytes = 1 << 16 // 64 KiB per call — matches the host-side cap.

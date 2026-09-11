@@ -18,19 +18,19 @@ func TestClientDispatch(t *testing.T) {
 			if err := msgpack.Unmarshal(payload, &request); err != nil {
 				t.Fatalf("decode request: %v", err)
 			}
-			if request.Event != "evolution.gene.route.requested.v1" {
+			if request.Event != "example.route.requested.v1" {
 				t.Fatalf("event = %q", request.Event)
 			}
 			return msgpack.Marshal(DispatchResult{
 				Value:  map[string]any{"status": int64(200)},
-				Events: []Action{{Name: "evolution.route.completed.v1"}},
+				Events: []Action{{Name: "example.route.completed.v1"}},
 			})
 		},
 	}
 
 	result, err := client.Dispatch(DispatchRequest{
-		Event:   "evolution.gene.route.requested.v1",
-		Payload: map[string]any{"gene": "sessions"},
+		Event:   "example.route.requested.v1",
+		Payload: map[string]any{"module": "catalog"},
 	})
 	if err != nil {
 		t.Fatalf("Dispatch: %v", err)
@@ -38,7 +38,7 @@ func TestClientDispatch(t *testing.T) {
 	if calledTarget != "lua-orchestrator" || calledFunction != FnDispatch {
 		t.Fatalf("call = (%q, %q)", calledTarget, calledFunction)
 	}
-	if len(result.Events) != 1 || result.Events[0].Name != "evolution.route.completed.v1" {
+	if len(result.Events) != 1 || result.Events[0].Name != "example.route.completed.v1" {
 		t.Fatalf("result = %#v", result)
 	}
 }
@@ -97,7 +97,7 @@ func TestClientSurfacesCallAndDecodeFailures(t *testing.T) {
 }
 
 func TestClientExecuteSaga(t *testing.T) {
-	request, err := NewSagaRequest("sessions.checkout.begin.v1", "request-1", "checkout:order-1", map[string]string{"order_id": "order-1"})
+	request, err := NewSagaRequest("example.checkout.begin.v1", "request-1", "checkout:order-1", map[string]string{"order_id": "order-1"})
 	if err != nil {
 		t.Fatalf("NewSagaRequest: %v", err)
 	}

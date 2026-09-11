@@ -8,8 +8,8 @@ import (
 func TestStripeCouponLifecycleContract(t *testing.T) {
 	upsertPayload := StripeCouponUpsertPayload{
 		ExternalKey: "coupon-local-1", AmountOffCents: 500, Currency: "usd",
-		Duration: "once", MaxRedemptions: 10, Name: "Sessions SAVE5",
-		Metadata: map[string]string{"source": "sessions.gg"},
+		Duration: "once", MaxRedemptions: 10, Name: "Example SAVE5",
+		Metadata: map[string]string{"source": "example.invalid"},
 	}
 	upsert, err := NewIntent("coupon:local-1:upsert", "stripe.coupon.create", "coupon:local-1:stripe-coupon", upsertPayload)
 	if err != nil {
@@ -49,7 +49,7 @@ func TestStripeCouponLifecycleContract(t *testing.T) {
 func TestStripePromotionCodeLifecycleContract(t *testing.T) {
 	payload := StripePromotionCodeUpsertPayload{
 		ExternalKey: "promotion-local-1", CouponID: "coupon_1", Code: "SAVE5", Active: true,
-		MaxRedemptions: 10, Metadata: map[string]string{"source": "sessions.gg"},
+		MaxRedemptions: 10, Metadata: map[string]string{"source": "example.invalid"},
 	}
 	upsert, err := NewIntent("promotion:local-1:upsert", "promotion_code.create", "promotion:local-1:stripe-promo", payload)
 	if err != nil {

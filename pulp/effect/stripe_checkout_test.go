@@ -12,7 +12,7 @@ import (
 func TestStripeCustomerCreateContract(t *testing.T) {
 	payload := StripeCustomerCreatePayload{
 		Email: "owner@example.com", Name: "Owner",
-		Description: "Sessions customer",
+		Description: "Example customer",
 	}
 	intent, err := NewIntent("customer:order-1", "stripe.customer.create", "checkout:order-1:customer", payload)
 	if err != nil {
@@ -41,7 +41,7 @@ func TestStripeFreeInvoiceFinalizeContract(t *testing.T) {
 	payload := StripeFreeInvoiceFinalizePayload{
 		Customer: StripeCustomerCreatePayload{Email: "owner@example.com"},
 		InvoiceItem: StripeFreeInvoiceItem{
-			AmountCents: 1200, Currency: "usd", Description: "Sessions server",
+			AmountCents: 1200, Currency: "usd", Description: "Example service",
 		},
 		Invoice: StripeFreeInvoice{
 			CollectionMethod: "charge_automatically", PromotionCodeID: "promo_1",
@@ -88,7 +88,7 @@ func TestStripeCheckoutTypedValidation(t *testing.T) {
 	base := StripeFreeInvoiceFinalizePayload{
 		Customer: StripeCustomerCreatePayload{Email: "owner@example.com"},
 		InvoiceItem: StripeFreeInvoiceItem{
-			AmountCents: 1200, Currency: "usd", Description: "Sessions server",
+			AmountCents: 1200, Currency: "usd", Description: "Example service",
 		},
 	}
 	for name, mutate := range map[string]func(*StripeFreeInvoiceFinalizePayload){

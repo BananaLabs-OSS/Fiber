@@ -518,7 +518,6 @@ var kindAliases = map[string]string{
 
 	KindNotificationEmailSend:                  KindNotificationEmailSend,
 	"workers.email.send":                       KindNotificationEmailSend,
-	"sessions.notification.extension.ready.v1": KindNotificationEmailSend,
 
 	KindServiceObservationExecute:  KindServiceObservationExecute,
 	KindCapacityObservationExecute: KindCapacityObservationExecute,

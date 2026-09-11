@@ -18,8 +18,7 @@ type Index struct {
 // IF NOT EXISTS, CREATE INDEX IF NOT EXISTS) so Migrate can safely run
 // on every cell start.
 //
-// This is the cell-side equivalent of Potassium's database.Migrate,
-// which takes bun models directly. Cells using Bun can call
+// Cells using Bun can call
 // Migrate(ctx, db.DB, ddl, indexes) where ddl is rendered from
 // bun.NewCreateTable().Model(m).IfNotExists() — see MigrateBun for a
 // helper that wraps that.

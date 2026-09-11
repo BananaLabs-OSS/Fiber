@@ -10,7 +10,7 @@ import (
 
 func TestStorageExactObjectPublicUploadContract(t *testing.T) {
 	presign := StorageExactObjectPresignPutCommand{
-		ExactKey: "sessions/uploads/order-1/world.zip", UploadID: "upload-1",
+		ExactKey: "example/uploads/order-1/archive.zip", UploadID: "upload-1",
 		ExpectedGeneration: StorageObjectGenerationAbsent, ContentLength: 1024,
 		ContentType: "application/zip", TTLSec: 300,
 	}

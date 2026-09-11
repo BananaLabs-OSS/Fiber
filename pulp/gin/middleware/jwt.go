@@ -1,7 +1,6 @@
 // Package middleware provides ready-made middleware for cells using
-// the pulpgin router. It mirrors Potassium's auth middleware so
-// existing handler code that reads "account_id" and "session_id" from
-// the context works without changes.
+// the pulpgin router. It provides common account and session claims so
+// handlers can read "account_id" and "session_id" from the context.
 //
 //	r := pulpgin.New()
 //	r.Use(middleware.JWTAuth(middleware.JWTConfig{Secret: []byte(secret)}))
@@ -17,15 +16,13 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// ErrorResponse is the standard error shape every BananaKit service
-// returns. Matches Potassium's middleware.ErrorResponse byte-for-byte
-// so handler code that constructs these literals compiles unchanged.
+// ErrorResponse is a conventional JSON error response.
 type ErrorResponse struct {
 	Error   string `json:"error"`
 	Message string `json:"message,omitempty"`
 }
 
-// Claims matches the claims BananAuth issues across the ecosystem.
+// Claims contains the account and session identifiers used by JWTAuth.
 type Claims struct {
 	jwt.RegisteredClaims
 	AccountID string `json:"account_id"`

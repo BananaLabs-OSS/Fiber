@@ -8,7 +8,7 @@ import (
 
 func TestStorageExactObjectHeadContract(t *testing.T) {
 	payload := StorageExactObjectHeadPayload{
-		ExactKey:    "sessions/app-1/inventory/object-1",
+		ExactKey:    "example/app-1/inventory/object-1",
 		AllowAbsent: true,
 	}
 	intent, err := NewIntent("storage-head:1", KindStorageExactObjectHead, "storage-head:object-1", payload)
@@ -57,7 +57,7 @@ func TestStorageExactObjectHeadValidation(t *testing.T) {
 		t.Fatalf("NormalizeKind = %q, %v", got, err)
 	}
 	unknownPayload, err := msgpack.Marshal(map[string]any{
-		"exact_key": "sessions/app-1/object", "allow_absent": true, "prefix": "sessions/app-1/",
+		"exact_key": "example/app-1/object", "allow_absent": true, "prefix": "example/app-1/",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +66,7 @@ func TestStorageExactObjectHeadValidation(t *testing.T) {
 		t.Fatal("payload with fields outside the exact-object-head contract validated")
 	}
 	unknownResult, err := msgpack.Marshal(map[string]any{
-		"exact_key": "sessions/app-1/object", "generation": int64(1), "absent": false, "etag": "opaque",
+		"exact_key": "example/app-1/object", "generation": int64(1), "absent": false, "etag": "opaque",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -75,20 +75,20 @@ func TestStorageExactObjectHeadValidation(t *testing.T) {
 		t.Fatal("result with fields outside the exact-object-head contract validated")
 	}
 
-	intent, err := NewIntent("storage-head:1", KindStorageExactObjectHead, "storage-head:1", StorageExactObjectHeadPayload{ExactKey: "sessions/app-1/object", AllowAbsent: false})
+	intent, err := NewIntent("storage-head:1", KindStorageExactObjectHead, "storage-head:1", StorageExactObjectHeadPayload{ExactKey: "example/app-1/object", AllowAbsent: false})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, result := range []StorageExactObjectHeadResult{
 		{ExactKey: intent.ID, Generation: 0},
-		{ExactKey: "sessions/app-1/object", Generation: 1, Absent: true},
+		{ExactKey: "example/app-1/object", Generation: 1, Absent: true},
 	} {
 		if _, err := NewCompletedReceipt(intent, result); err == nil {
 			t.Fatalf("invalid result %#v validated", result)
 		}
 	}
 
-	absentRaw, err := msgpack.Marshal(StorageExactObjectHeadResult{ExactKey: "sessions/app-1/object", Absent: true})
+	absentRaw, err := msgpack.Marshal(StorageExactObjectHeadResult{ExactKey: "example/app-1/object", Absent: true})
 	if err != nil {
 		t.Fatalf("marshal absent result: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestStorageExactObjectHeadValidation(t *testing.T) {
 		t.Fatal("absent result validated when allow_absent is false")
 	}
 
-	mismatchRaw, err := msgpack.Marshal(StorageExactObjectHeadResult{ExactKey: "sessions/app-1/other", Generation: 1})
+	mismatchRaw, err := msgpack.Marshal(StorageExactObjectHeadResult{ExactKey: "example/app-1/other", Generation: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

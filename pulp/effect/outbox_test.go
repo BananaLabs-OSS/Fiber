@@ -12,13 +12,13 @@ func testLease(t *testing.T) Lease {
 		t.Fatal(err)
 	}
 	return Lease{
-		Version: OutboxVersionV1, Owner: "sessions-commerce", ConsumerID: "dispatcher-a",
+		Version: OutboxVersionV1, Owner: "example-commerce", ConsumerID: "dispatcher-a",
 		LeaseID: "lease-1", Attempt: 1, LeasedUntilUnixMilli: 1000, Intent: intent,
 	}
 }
 
 func TestOutboxClaimLeaseContract(t *testing.T) {
-	request, err := NewClaimRequest("sessions-commerce", "dispatcher-a", 25, 30_000)
+	request, err := NewClaimRequest("example-commerce", "dispatcher-a", 25, 30_000)
 	if err != nil {
 		t.Fatalf("NewClaimRequest: %v", err)
 	}

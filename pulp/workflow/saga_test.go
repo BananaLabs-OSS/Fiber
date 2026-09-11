@@ -23,7 +23,7 @@ type paymentIntentCreated struct {
 }
 
 func TestSagaWireRoundTripCompletedCheckout(t *testing.T) {
-	request, err := NewSagaRequest("sessions.checkout.begin.v1", "request-1", "checkout:order-1", checkoutStart{
+	request, err := NewSagaRequest("example.checkout.begin.v1", "request-1", "checkout:order-1", checkoutStart{
 		OrderID: "order-1", Email: "owner@example.test",
 	})
 	if err != nil {
@@ -86,7 +86,7 @@ func TestSagaWireRoundTripCompletedCheckout(t *testing.T) {
 }
 
 func TestSagaPendingAndFailedSemantics(t *testing.T) {
-	request, err := NewSagaRequest("sessions.checkout.begin.v1", "request-1", "checkout:order-1", checkoutStart{OrderID: "order-1", Email: "owner@example.test"})
+	request, err := NewSagaRequest("example.checkout.begin.v1", "request-1", "checkout:order-1", checkoutStart{OrderID: "order-1", Email: "owner@example.test"})
 	if err != nil {
 		t.Fatalf("NewSagaRequest: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestSagaValidationRejectsInconsistentStates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
 	}
-	request := SagaRequest{Version: SagaVersionV1, Name: "sessions.checkout.begin.v1", RequestID: "request-1", IdempotencyKey: "checkout:order-1", Payload: payload}
+	request := SagaRequest{Version: SagaVersionV1, Name: "example.checkout.begin.v1", RequestID: "request-1", IdempotencyKey: "checkout:order-1", Payload: payload}
 	if err := request.Validate(); err != nil {
 		t.Fatalf("valid request rejected: %v", err)
 	}

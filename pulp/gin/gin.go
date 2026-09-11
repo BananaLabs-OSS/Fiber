@@ -76,7 +76,7 @@ type Engine struct {
 }
 
 // cloudflareCIDRs is Cloudflare's published list of edge ranges
-// (https://www.cloudflare.com/ips/). When a Sessions/Evolution cell is
+// (https://www.cloudflare.com/ips/). When a cell is
 // fronted by Cloudflare, these are the only peers whose CF-Connecting-IP
 // header may be trusted. Passed to SetTrustedProxies by TrustCloudflare.
 var cloudflareCIDRs = []string{

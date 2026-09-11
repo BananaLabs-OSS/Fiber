@@ -35,7 +35,7 @@ func TestHTTPProbeIntentBindsOwnerIdentityAndDerivesStableHostSelectors(t *testi
 	}
 
 	tampered := command
-	tampered.URL = "https://sessions.gg/health"
+	tampered.URL = "https://example.invalid/health"
 	otherDestination, err := HTTPProbeDestinationV1(tampered)
 	if err != nil {
 		t.Fatal(err)
@@ -149,10 +149,10 @@ func TestHTTPProbeCompletedReceiptRejectsDestinationFenceAndOwnerTamper(t *testi
 
 func validHTTPProbeCommandV1() HTTPProbeCommandV1 {
 	return HTTPProbeCommandV1{
-		Version:  "sessions.control/v1",
+		Version:  "example.control/v1",
 		EffectID: "probe-1", IdempotencyKey: "probe-1",
 		Kind: KindHTTPProbeExecute, RequestID: "sweep-1",
-		ComponentSlug: "website", URL: "https://sessions.gg/",
+		ComponentSlug: "website", URL: "https://example.invalid/",
 		ObservedAt: "2026-07-26T12:00:00Z",
 	}
 }
