@@ -37,7 +37,7 @@ func capacityObservationFactForTest() CapacityObservationFactV1 {
 			Version: "contracts.v1",
 			ID:      CapacityObservationOpaqueRefV1{Version: "contracts.v1", Value: "node-1"},
 		},
-		Generation: 1785067200000, ObservedAt: "2026-07-26T12:00:00Z",
+		Generation: 1785067200000, ObservedAt: "2026-07-26T12:00:00Z", Healthy: true, Ready: true,
 		Capacity:  quantity(8000, 32<<30, 200<<30),
 		Allocated: quantity(2500, 10<<30, 50<<30),
 		Reserved:  quantity(0, 0, 0),

@@ -69,6 +69,8 @@ type CapacityObservationFactV1 struct {
 	Node       CapacityObservationNodeRefV1          `msgpack:"node"`
 	Generation uint64                                `msgpack:"generation"`
 	ObservedAt string                                `msgpack:"observed_at"`
+	Healthy    bool                                  `msgpack:"healthy"`
+	Ready      bool                                  `msgpack:"ready"`
 	Capacity   CapacityObservationResourceQuantityV1 `msgpack:"capacity"`
 	Allocated  CapacityObservationResourceQuantityV1 `msgpack:"allocated"`
 	Reserved   CapacityObservationResourceQuantityV1 `msgpack:"reserved"`
