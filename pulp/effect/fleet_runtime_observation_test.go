@@ -287,33 +287,46 @@ func TestFleetRuntimeObservationDetailedFieldsSurviveCanonicalWire(t *testing.T)
 	}
 }
 
-func TestFleetRuntimeObservationEmptyPlayerHistorySurvivesCanonicalWire(t *testing.T) {
-	field := FleetRuntimeObservationFieldPlayerHistoryV1
-	payload := fleetRuntimeObservationIntentForTest(field)
-	intent, err := NewIntent("fleet-observe-empty-history", KindFleetRuntimeObservationExecute, "fleet-observe-empty-history", payload)
-	if err != nil {
-		t.Fatal(err)
+func TestFleetRuntimeObservationEmptyTypedCollectionsSurviveCanonicalWire(t *testing.T) {
+	tests := []struct {
+		field FleetRuntimeObservationFieldV1
+		data  FleetRuntimeObservationDataV1
+	}{
+		{FleetRuntimeObservationFieldSettingsV1, FleetRuntimeObservationDataV1{Settings: map[string]string{}}},
+		{FleetRuntimeObservationFieldGameRulesV1, FleetRuntimeObservationDataV1{GameRules: map[string]string{}}},
+		{FleetRuntimeObservationFieldPlayersV1, FleetRuntimeObservationDataV1{Players: []string{}}},
+		{FleetRuntimeObservationFieldPlayerHistoryV1, FleetRuntimeObservationDataV1{PlayerHistory: []FleetRuntimePlayerHistoryEntryV1{}}},
+		{FleetRuntimeObservationFieldArtifactsV1, FleetRuntimeObservationDataV1{Artifacts: []FleetRuntimeObservedArtifactV1{}}},
 	}
-	result := fleetRuntimeObservationResultForTest(field)
-	result.Data = FleetRuntimeObservationDataV1{PlayerHistory: []FleetRuntimePlayerHistoryEntryV1{}}
-	receipt, err := NewCompletedReceipt(intent, result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wire, err := MarshalReceipt(receipt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	decodedReceipt, err := UnmarshalReceipt(wire)
-	if err != nil {
-		t.Fatal(err)
-	}
-	decoded, err := DecodeResult[FleetRuntimeObservationReceiptV1](decodedReceipt)
-	if err != nil {
-		t.Fatalf("decode empty player history: %v", err)
-	}
-	if decoded.Data.PlayerHistory == nil || len(decoded.Data.PlayerHistory) != 0 {
-		t.Fatalf("empty player history wire value = %#v", decoded.Data.PlayerHistory)
+	for _, test := range tests {
+		t.Run(string(test.field), func(t *testing.T) {
+			payload := fleetRuntimeObservationIntentForTest(test.field)
+			intent, err := NewIntent("fleet-observe-empty-"+string(test.field), KindFleetRuntimeObservationExecute, "fleet-observe-empty-"+string(test.field), payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := fleetRuntimeObservationResultForTest(test.field)
+			result.Data = test.data
+			receipt, err := NewCompletedReceipt(intent, result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wire, err := MarshalReceipt(receipt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decodedReceipt, err := UnmarshalReceipt(wire)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded, err := DecodeResult[FleetRuntimeObservationReceiptV1](decodedReceipt)
+			if err != nil {
+				t.Fatalf("decode empty %s: %v", test.field, err)
+			}
+			if !reflect.DeepEqual(decoded.Data, test.data) {
+				t.Fatalf("empty %s wire data = %#v, want %#v", test.field, decoded.Data, test.data)
+			}
+		})
 	}
 }
 
