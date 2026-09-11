@@ -109,13 +109,13 @@ type FleetRuntimeObservedArtifactV1 struct {
 // FleetRuntimeObservationDataV1 contains exactly one member selected by the
 // enclosing field enum.
 type FleetRuntimeObservationDataV1 struct {
-	Settings       map[string]string                        `msgpack:"settings,omitempty"`
-	GameRules      map[string]string                        `msgpack:"gamerules,omitempty"`
-	Players        []string                                 `msgpack:"players,omitempty"`
-	PlayerHistory  []FleetRuntimePlayerHistoryEntryV1       `msgpack:"player_history,omitempty"`
+	Settings       map[string]string                        `msgpack:"settings"`
+	GameRules      map[string]string                        `msgpack:"gamerules"`
+	Players        []string                                 `msgpack:"players"`
+	PlayerHistory  []FleetRuntimePlayerHistoryEntryV1       `msgpack:"player_history"`
 	Access         *FleetRuntimeObservationAccessV1         `msgpack:"access,omitempty"`
 	AccessSnapshot *FleetRuntimeObservationAccessSnapshotV1 `msgpack:"access_snapshot,omitempty"`
-	Artifacts      []FleetRuntimeObservedArtifactV1         `msgpack:"artifacts,omitempty"`
+	Artifacts      []FleetRuntimeObservedArtifactV1         `msgpack:"artifacts"`
 	Status         string                                   `msgpack:"status,omitempty"`
 }
 

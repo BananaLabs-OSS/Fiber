@@ -287,6 +287,36 @@ func TestFleetRuntimeObservationDetailedFieldsSurviveCanonicalWire(t *testing.T)
 	}
 }
 
+func TestFleetRuntimeObservationEmptyPlayerHistorySurvivesCanonicalWire(t *testing.T) {
+	field := FleetRuntimeObservationFieldPlayerHistoryV1
+	payload := fleetRuntimeObservationIntentForTest(field)
+	intent, err := NewIntent("fleet-observe-empty-history", KindFleetRuntimeObservationExecute, "fleet-observe-empty-history", payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := fleetRuntimeObservationResultForTest(field)
+	result.Data = FleetRuntimeObservationDataV1{PlayerHistory: []FleetRuntimePlayerHistoryEntryV1{}}
+	receipt, err := NewCompletedReceipt(intent, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := MarshalReceipt(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decodedReceipt, err := UnmarshalReceipt(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeResult[FleetRuntimeObservationReceiptV1](decodedReceipt)
+	if err != nil {
+		t.Fatalf("decode empty player history: %v", err)
+	}
+	if decoded.Data.PlayerHistory == nil || len(decoded.Data.PlayerHistory) != 0 {
+		t.Fatalf("empty player history wire value = %#v", decoded.Data.PlayerHistory)
+	}
+}
+
 func TestFleetRuntimeObservationNewFieldsRejectUnknownNestedFields(t *testing.T) {
 	tests := []struct {
 		field FleetRuntimeObservationFieldV1
